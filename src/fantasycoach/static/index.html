@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FantasyCoach</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏈</text></svg>">
+<style>
+:root {
+  --bg: #f4f5f2;
+  --surface: #ffffff;
+  --surface-2: #f0f2ee;
+  --border: #e1e4dd;
+  --text: #1a1f1a;
+  --muted: #69716a;
+  --accent: #1f8a4c;
+  --accent-soft: #e3f3e8;
+  --danger: #c43c3c;
+  --danger-soft: #fbe7e7;
+  --warn: #a86b00;
+  --warn-soft: #fbf0d9;
+  --shadow: 0 1px 2px rgba(20, 30, 20, .06), 0 4px 16px rgba(20, 30, 20, .05);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1311;
+    --surface: #171c19;
+    --surface-2: #1e2420;
+    --border: #2a322d;
+    --text: #e8ece8;
+    --muted: #8f9a92;
+    --accent: #3ecf7a;
+    --accent-soft: #173323;
+    --danger: #ff7b7b;
+    --danger-soft: #3a1c1c;
+    --warn: #f0b545;
+    --warn-soft: #3a2e14;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+.wrap { max-width: 920px; margin: 0 auto; padding: 0 16px 48px; }
+
+header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 18px 0; flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 750; font-size: 19px; letter-spacing: -.01em; }
+.brand .mark {
+  width: 34px; height: 34px; border-radius: 10px; background: var(--accent); color: #fff;
+  display: grid; place-items: center; font-size: 18px;
+}
+.account { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.account .who { color: var(--muted); font-size: 14px; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.pad { padding: 20px; }
+
+.btn {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 10px;
+  padding: 8px 14px; cursor: pointer; font-weight: 550;
+}
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { filter: brightness(1.05); }
+.btn:disabled { opacity: .6; cursor: default; }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+input[type=text], select {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 8px 12px;
+}
+input[type=text]:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* setup */
+.hero { text-align: center; padding: 48px 20px; }
+.hero h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -.02em; }
+.hero p { margin: 0 0 22px; color: var(--muted); }
+.hero form { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.hero input { width: min(280px, 100%); }
+.league-list { display: grid; gap: 10px; margin-top: 24px; text-align: left; max-width: 460px; margin-inline: auto; }
+.league-btn {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2);
+  cursor: pointer; text-align: left;
+}
+.league-btn:hover { border-color: var(--accent); }
+.league-btn small { color: var(--muted); }
+
+/* toolbar */
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.tabs { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 3px; }
+.tab { border: 0; background: transparent; padding: 7px 16px; border-radius: 9px; cursor: pointer; font-weight: 600; color: var(--muted); }
+.tab[aria-selected=true] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.stepper button { border: 0; background: transparent; padding: 7px 11px; cursor: pointer; color: var(--muted); }
+.stepper button:hover { color: var(--text); }
+.stepper span { min-width: 64px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 11px;
+  font-size: 13px; font-weight: 600; cursor: pointer; color: var(--muted);
+}
+.chip[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* summary */
+.summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.summary .big { font-size: 30px; font-weight: 750; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.summary .label { color: var(--muted); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.gain { color: var(--accent); font-weight: 700; }
+.ok-pill { background: var(--accent-soft); color: var(--accent); padding: 6px 12px; border-radius: 999px; font-weight: 650; font-size: 14px; }
+
+.changes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.changes h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; }
+.changes .start h3 { color: var(--accent); }
+.changes .bench h3 { color: var(--danger); }
+@media (max-width: 600px) { .changes { grid-template-columns: 1fr; } }
+
+/* player rows */
+.rows { list-style: none; margin: 0; padding: 0; }
+.row {
+  display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 16px; border-top: 1px solid var(--border);
+}
+.rows .row:first-child { border-top: 0; }
+.row.new { background: linear-gradient(90deg, var(--accent-soft), transparent 60%); }
+.slot {
+  font-size: 12px; font-weight: 700; color: var(--muted); background: var(--surface-2);
+  border-radius: 8px; padding: 4px 0; text-align: center; letter-spacing: .02em;
+}
+.who-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.avatar {
+  width: 38px; height: 38px; border-radius: 50%; background: var(--surface-2); flex: none;
+  object-fit: cover; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--muted); overflow: hidden;
+}
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.pname { font-weight: 620; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pmeta { color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pts { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.pts small { display: block; font-weight: 500; color: var(--muted); font-size: 12px; }
+.badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
+.badge.q { background: var(--warn-soft); color: var(--warn); }
+.badge.o { background: var(--danger-soft); color: var(--danger); }
+.badge.up { background: var(--accent-soft); color: var(--accent); }
+.empty-slot { color: var(--danger); font-weight: 600; }
+.section-label { padding: 14px 16px 6px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; border-top: 1px solid var(--border); }
+.bench-row { opacity: .75; }
+
+/* waivers */
+.pick { display: grid; grid-template-columns: 28px 1fr 1fr 84px; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); }
+.rows .pick:first-child { border-top: 0; }
+.rank { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+.side-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; }
+.side-label.add { color: var(--accent); }
+.side-label.drop { color: var(--danger); }
+.gainbox { text-align: right; }
+.gainbox .gain { font-size: 18px; }
+.bar { height: 4px; border-radius: 4px; background: var(--surface-2); margin-top: 6px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.pick-head { display: grid; grid-template-columns: 28px 1fr 1fr 84px; gap: 12px; padding: 12px 16px 0; color: var(--muted); font-size: 12px; }
+@media (max-width: 640px) {
+  .pick { grid-template-columns: 22px 1fr 64px; }
+  .pick .drop-cell { grid-column: 2 / 3; }
+  .pick .gainbox { grid-row: 1 / 3; grid-column: 3; }
+  .pick-head { display: none; }
+  .row { grid-template-columns: 52px 1fr auto; padding: 10px 12px; }
+}
+
+.notice { padding: 14px 16px; border-radius: 12px; margin-bottom: 14px; }
+.notice.error { background: var(--danger-soft); color: var(--danger); }
+.muted { color: var(--muted); }
+.center { text-align: center; padding: 40px 16px; }
+.spinner {
+  width: 26px; height: 26px; border: 3px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 10px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.hidden { display: none !important; }
+footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><div class="mark">🏈</div>FantasyCoach</div>
+    <div class="account hidden" id="account">
+      <span class="who" id="who"></span>
+      <select id="league-select" aria-label="League"></select>
+      <button class="btn small" id="switch-user">Switch user</button>
+    </div>
+  </header>
+
+  <!-- Setup -->
+  <section id="setup" class="card hero hidden">
+    <h1>Your weekly fantasy coach</h1>
+    <p>Enter your Sleeper username to get start/sit and waiver advice for your league.</p>
+    <form id="user-form">
+      <input type="text" id="username" placeholder="Sleeper username" autocomplete="username" required>
+      <button class="btn primary" type="submit" id="user-submit">Find my leagues</button>
+    </form>
+    <div id="setup-error" class="notice error hidden" style="max-width:460px;margin:18px auto 0"></div>
+    <div class="league-list" id="league-list"></div>
+  </section>
+
+  <!-- Main -->
+  <main id="main" class="hidden">
+    <div class="toolbar">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="lineup" aria-selected="true">Start / Sit</button>
+        <button class="tab" role="tab" data-tab="waivers" aria-selected="false">Waiver Wire</button>
+      </div>
+      <div class="controls">
+        <div class="stepper" aria-label="Week">
+          <button id="week-prev" aria-label="Previous week">‹</button>
+          <span id="week-label">Week –</span>
+          <button id="week-next" aria-label="Next week">›</button>
+        </div>
+        <select id="horizon" class="waivers-only hidden" aria-label="Weeks to look ahead">
+          <option value="1">This week only</option>
+          <option value="3" selected>Next 3 weeks</option>
+          <option value="5">Next 5 weeks</option>
+          <option value="8">Next 8 weeks</option>
+        </select>
+        <button class="btn small" id="refresh" title="Reload">↻</button>
+      </div>
+    </div>
+    <div class="chips waivers-only hidden" id="pos-chips" style="margin-bottom:14px"></div>
+    <div id="error" class="notice error hidden"></div>
+    <div id="content"></div>
+  </main>
+
+  <footer>Projections from Sleeper · scored with your league's settings</footer>
+</div>
+
+<script>
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem("fc." + k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem("fc." + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem("fc." + k); } catch {} },
+};
+
+const state = {
+  user: store.get("user"),          // {username, user_id, display_name}
+  leagues: store.get("leagues") || [],
+  leagueId: store.get("league"),
+  tab: store.get("tab") || "lineup",
+  week: null,
+  currentWeek: null,
+  horizon: 3,
+  position: "",
+  positions: [],
+};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (n) => (Math.round(n * 10) / 10).toFixed(1);
+
+async function api(path) {
+  const res = await fetch(path);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `Request failed (${res.status})`);
+  return body;
+}
+
+/* ---------- rendering helpers ---------- */
+function initials(name) { return name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase(); }
+
+function avatar(p) {
+  return `<div class="avatar"><img src="${esc(p.image)}" alt="" loading="lazy"
+    onerror="this.parentNode.textContent='${esc(initials(p.name)).replace(/'/g, "")}'"></div>`;
+}
+
+function statusBadge(p) {
+  if (!p.injury_status) return "";
+  const cls = p.injury_status === "Questionable" ? "q" : "o";
+  return `<span class="badge ${cls}">${esc(p.injury_status)}</span>`;
+}
+
+function meta(p) {
+  const opp = p.opponent ? `vs ${esc(p.opponent)}` : "BYE";
+  return `<span>${esc(p.position)} · ${esc(p.team || "FA")}</span><span>${opp}</span>${statusBadge(p)}`;
+}
+
+function playerCell(p) {
+  return `<div class="who-cell">${avatar(p)}<div style="min-width:0">
+    <div class="pname">${esc(p.name)}</div><div class="pmeta">${meta(p)}</div></div></div>`;
+}
+
+function pts(p) {
+  const adj = p.adjusted !== p.projected ? `<small>${fmt(p.projected)} raw</small>` : "";
+  return `<div class="pts">${fmt(p.adjusted)}${adj}</div>`;
+}
+
+function loading(msg) {
+  $("content").innerHTML = `<div class="card center"><div class="spinner"></div><div class="muted">${esc(msg)}</div></div>`;
+}
+
+function showError(el, msg) { el.textContent = msg; el.classList.toggle("hidden", !msg); }
+
+/* ---------- views ---------- */
+function renderLineup(d) {
+  const summary = d.gain > 0
+    ? `<div><div class="label">Projected points</div>
+         <div class="big">${fmt(d.current_total)} <span class="muted">→</span> ${fmt(d.recommended_total)}</div></div>
+       <div class="gain" style="font-size:22px">+${fmt(d.gain)} pts</div>`
+    : `<div><div class="label">Projected points</div><div class="big">${fmt(d.recommended_total)}</div></div>
+       <span class="ok-pill">✓ Your lineup is optimal</span>`;
+
+  const changeList = (list) => list.map((p) =>
+    `<li class="row" style="grid-template-columns:1fr auto">${playerCell(p)}${pts(p)}</li>`).join("");
+  const changes = d.to_start.length ? `
+    <div class="changes">
+      <div class="card start"><div class="pad" style="padding-bottom:6px"><h3>Start</h3></div><ul class="rows">${changeList(d.to_start)}</ul></div>
+      <div class="card bench"><div class="pad" style="padding-bottom:6px"><h3>Bench</h3></div><ul class="rows">${changeList(d.to_bench)}</ul></div>
+    </div>` : "";
+
+  const slots = d.slots.map((s) => s.player
+    ? `<li class="row ${s.new ? "new" : ""}"><div class="slot">${esc(s.slot.replace("_FLEX", " FLX").replace("SUPER FLX", "SFLX"))}</div>
+         <div style="min-width:0;display:flex;align-items:center;gap:8px">${playerCell(s.player)}${s.new ? '<span class="badge up">START</span>' : ""}</div>${pts(s.player)}</li>`
+    : `<li class="row"><div class="slot">${esc(s.slot)}</div><div class="empty-slot">Empty — no eligible player</div><div></div></li>`).join("");
+  const bench = d.bench.map((p) =>
+    `<li class="row bench-row"><div class="slot">BN</div>${playerCell(p)}${pts(p)}</li>`).join("");
+
+  $("content").innerHTML = `
+    <div class="card pad summary">${summary}</div>
+    ${changes}
+    <div class="card"><ul class="rows">${slots}</ul>
+      ${bench ? `<div class="section-label">Bench</div><ul class="rows">${bench}</ul>` : ""}</div>`;
+}
+
+function renderWaivers(d) {
+  state.positions = d.positions;
+  renderPosChips();
+  if (!d.picks.length) {
+    $("content").innerHTML = `<div class="card center"><div style="font-size:28px">✓</div>
+      <div>No free agent projects better than your current players${state.position ? " at " + esc(state.position) : ""}.</div></div>`;
+    return;
+  }
+  const max = Math.max(...d.picks.map((p) => p.gain));
+  const span = d.weeks > 1 ? `wk ${d.week}–${d.week + d.weeks - 1}` : `wk ${d.week}`;
+  const rows = d.picks.map((pk, i) => `
+    <li class="pick">
+      <div class="rank">${i + 1}</div>
+      <div><div class="side-label add">Add · ${fmt(pk.add_value)} pts</div>${playerCell(pk.add)}</div>
+      <div class="drop-cell">${pk.drop
+        ? `<div class="side-label drop">Drop · ${fmt(pk.drop_value)} pts</div>${playerCell(pk.drop)}`
+        : `<div class="side-label">Open roster spot</div><div class="muted">No ${esc(pk.add.position)} on your roster</div>`}</div>
+      <div class="gainbox"><div class="gain">+${fmt(pk.gain)}</div><div class="muted" style="font-size:12px">${span}</div>
+        <div class="bar"><i style="width:${Math.max(6, (pk.gain / max) * 100)}%"></i></div></div>
+    </li>`).join("");
+  $("content").innerHTML = `<div class="card">
+    <div class="pick-head"><div>#</div><div>Pick up</div><div>Let go</div><div style="text-align:right">Net gain</div></div>
+    <ul class="rows">${rows}</ul></div>`;
+}
+
+function renderPosChips() {
+  const opts = ["", ...state.positions];
+  $("pos-chips").innerHTML = opts.map((p) =>
+    `<button class="chip" data-pos="${esc(p)}" aria-pressed="${p === state.position}">${p || "All"}</button>`).join("");
+}
+
+/* ---------- data loading ---------- */
+let loadToken = 0;
+async function load() {
+  if (!state.user || !state.leagueId) return;
+  const token = ++loadToken;
+  showError($("error"), "");
+  const q = new URLSearchParams({ league_id: state.leagueId, user_id: state.user.user_id });
+  if (state.week) q.set("week", state.week);
+  try {
+    if (state.tab === "lineup") {
+      loading("Building your best lineup…");
+      const d = await api(`/api/lineup?${q}`);
+      if (token !== loadToken) return;
+      setWeek(d.week);
+      renderLineup(d);
+    } else {
+      loading("Scanning the waiver wire…");
+      q.set("weeks", state.horizon);
+      if (state.position) q.set("position", state.position);
+      const d = await api(`/api/waivers?${q}`);
+      if (token !== loadToken) return;
+      setWeek(d.week);
+      renderWaivers(d);
+    }
+  } catch (e) {
+    if (token !== loadToken) return;
+    $("content").innerHTML = "";
+    showError($("error"), e.message);
+  }
+}
+
+function setWeek(w) {
+  state.week = w;
+  $("week-label").textContent = `Week ${w}`;
+  $("week-prev").disabled = w <= 1;
+  $("week-next").disabled = w >= 18;
+}
+
+/* ---------- screens ---------- */
+function showSetup() {
+  $("setup").classList.remove("hidden");
+  $("main").classList.add("hidden");
+  $("account").classList.add("hidden");
+  $("league-list").innerHTML = "";
+  $("username").value = state.user?.username || "";
+  $("username").focus();
+}
+
+function showMain() {
+  $("setup").classList.add("hidden");
+  $("main").classList.remove("hidden");
+  $("account").classList.remove("hidden");
+  $("who").textContent = state.user.display_name;
+  $("league-select").innerHTML = state.leagues.map((l) =>
+    `<option value="${esc(l.league_id)}" ${l.league_id === state.leagueId ? "selected" : ""}>${esc(l.name)}</option>`).join("");
+  selectTab(state.tab, false);
+  load();
+}
+
+function selectTab(tab, reload = true) {
+  state.tab = tab;
+  store.set("tab", tab);
+  document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", t.dataset.tab === tab));
+  document.querySelectorAll(".waivers-only").forEach((el) => el.classList.toggle("hidden", tab !== "waivers"));
+  if (reload) load();
+}
+
+function chooseLeague(id) {
+  state.leagueId = id;
+  store.set("league", id);
+  showMain();
+}
+
+/* ---------- events ---------- */
+$("user-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = $("username").value.trim();
+  if (!username) return;
+  const btn = $("user-submit");
+  btn.disabled = true; btn.textContent = "Looking up…";
+  showError($("setup-error"), "");
+  $("league-list").innerHTML = "";
+  try {
+    const d = await api(`/api/user/${encodeURIComponent(username)}/leagues`);
+    state.user = { username, user_id: d.user_id, display_name: d.display_name };
+    state.leagues = d.leagues;
+    store.set("user", state.user);
+    store.set("leagues", state.leagues);
+    if (!d.leagues.length) throw new Error(`No ${d.season} leagues found for ${username}.`);
+    if (d.leagues.length === 1) return chooseLeague(d.leagues[0].league_id);
+    $("league-list").innerHTML = `<div class="muted" style="font-size:13px">Choose a league</div>` +
+      d.leagues.map((l) => `<button class="league-btn" data-id="${esc(l.league_id)}">
+        <span><strong>${esc(l.name)}</strong></span><small>${l.teams ? l.teams + " teams" : ""}</small></button>`).join("");
+  } catch (err) {
+    showError($("setup-error"), err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Find my leagues";
+  }
+});
+
+$("league-list").addEventListener("click", (e) => {
+  const b = e.target.closest(".league-btn");
+  if (b) chooseLeague(b.dataset.id);
+});
+$("league-select").addEventListener("change", (e) => { state.leagueId = e.target.value; store.set("league", state.leagueId); load(); });
+$("switch-user").addEventListener("click", () => { store.del("league"); state.leagueId = null; showSetup(); });
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => selectTab(t.dataset.tab)));
+$("week-prev").addEventListener("click", () => { if (state.week > 1) { state.week--; load(); } });
+$("week-next").addEventListener("click", () => { if (state.week < 18) { state.week++; load(); } });
+$("refresh").addEventListener("click", load);
+$("horizon").addEventListener("change", (e) => { state.horizon = +e.target.value; load(); });
+$("pos-chips").addEventListener("click", (e) => {
+  const c = e.target.closest(".chip");
+  if (!c) return;
+  state.position = c.dataset.pos;
+  renderPosChips();
+  load();
+});
+
+/* ---------- boot ---------- */
+if (state.user && state.leagueId) showMain(); else showSetup();
+</script>
+</body>
+</html>
