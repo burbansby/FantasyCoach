@@ -181,6 +181,50 @@ input[type=text]:focus, select:focus, .btn:focus-visible { outline: 2px solid va
   border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 10px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* players */
+.psearch { position: relative; flex: 1 1 260px; max-width: 420px; }
+.psearch input { width: 100%; padding-left: 34px; }
+.psearch .icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.suggest {
+  position: absolute; z-index: 10; top: calc(100% + 4px); left: 0; right: 0; list-style: none; margin: 0; padding: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18);
+}
+.suggest li { padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.suggest li[aria-selected=true], .suggest li:hover { background: var(--surface-2); }
+.suggest .avatar { width: 30px; height: 30px; }
+.players-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.pchip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 3px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border); font-size: 13px; font-weight: 600;
+}
+.pchip .avatar { width: 24px; height: 24px; font-size: 10px; }
+.pchip button { border: 0; background: var(--surface-2); color: var(--muted); border-radius: 50%; width: 20px; height: 20px; cursor: pointer; line-height: 1; padding: 0; }
+.pchip button:hover { color: var(--danger); }
+.pcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.pcard { padding: 16px; position: relative; }
+.pcard.best { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, var(--shadow); }
+.pcard .crown { position: absolute; top: 12px; right: 12px; }
+.pcard .big { font-size: 28px; font-weight: 750; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 12px; }
+.pcard .sub { display: flex; gap: 14px; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.pcard .sub b { color: var(--text); font-weight: 650; }
+.statline { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.statline b { color: var(--text); font-variant-numeric: tabular-nums; }
+.scroll-x { overflow-x: auto; }
+table.grid { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.grid th, table.grid td { padding: 10px 14px; text-align: right; border-top: 1px solid var(--border); white-space: nowrap; }
+table.grid thead th { border-top: 0; font-size: 12px; color: var(--muted); font-weight: 650; }
+table.grid th:first-child, table.grid td:first-child { text-align: left; }
+table.grid td .opp { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
+table.grid td.win { color: var(--accent); font-weight: 750; }
+table.grid tfoot td { font-weight: 700; }
+.verdict { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.verdict .avatar { width: 44px; height: 44px; }
+.verdict .big { font-size: 20px; }
+.signed-out-cta { text-align: center; padding: 40px 20px; }
+.signed-out-cta h2 { margin: 0 0 6px; font-size: 20px; }
+.signed-out-cta p { margin: 0 0 16px; color: var(--muted); }
+.linkish { background: none; border: 0; color: var(--accent); font-weight: 600; cursor: pointer; padding: 0; margin-top: 18px; }
+.linkish:hover { text-decoration: underline; }
 .hidden { display: none !important; }
 footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 28px; }
 </style>
@@ -190,9 +234,12 @@ footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 2
   <header>
     <div class="brand"><div class="mark">🏈</div>FantasyCoach</div>
     <div class="account hidden" id="account">
-      <span class="who" id="who"></span>
-      <select id="league-select" aria-label="League"></select>
-      <button class="btn small" id="switch-user">Switch user</button>
+      <span class="account signed-in-only">
+        <span class="who" id="who"></span>
+        <select id="league-select" aria-label="League"></select>
+        <button class="btn small" id="switch-user">Switch user</button>
+      </span>
+      <button class="btn small primary signed-out-only" id="sign-in">Connect Sleeper</button>
     </div>
   </header>
 
@@ -206,6 +253,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 2
     </form>
     <div id="setup-error" class="notice error hidden" style="max-width:460px;margin:18px auto 0"></div>
     <div class="league-list" id="league-list"></div>
+    <button class="linkish" id="skip-setup">Or just look up players without signing in →</button>
   </section>
 
   <!-- Main -->
@@ -214,6 +262,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 2
       <div class="tabs" role="tablist">
         <button class="tab" role="tab" data-tab="lineup" aria-selected="true">Start / Sit</button>
         <button class="tab" role="tab" data-tab="waivers" aria-selected="false">Waiver Wire</button>
+        <button class="tab" role="tab" data-tab="players" aria-selected="false">Players</button>
       </div>
       <div class="controls">
         <div class="stepper" aria-label="Week">
@@ -227,15 +276,31 @@ footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 2
           <option value="5">Next 5 weeks</option>
           <option value="8">Next 8 weeks</option>
         </select>
+        <select id="p-weeks" class="players-only hidden" aria-label="Weeks to show">
+          <option value="1">1 week</option>
+          <option value="4" selected>4 weeks</option>
+          <option value="6">6 weeks</option>
+          <option value="8">8 weeks</option>
+        </select>
+        <select id="scoring" class="players-only hidden" aria-label="Scoring"></select>
         <button class="btn small" id="refresh" title="Reload">↻</button>
       </div>
     </div>
     <div class="chips waivers-only hidden" id="pos-chips" style="margin-bottom:14px"></div>
+    <div class="players-bar players-only hidden">
+      <div class="psearch">
+        <span class="icon">⌕</span>
+        <input type="text" id="psearch" placeholder="Add a player… (e.g. Bijan, Chiefs)" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-controls="suggest" aria-label="Search players">
+        <ul class="suggest hidden" id="suggest" role="listbox"></ul>
+      </div>
+      <div class="chips" id="pchips"></div>
+    </div>
     <div id="error" class="notice error hidden"></div>
     <div id="content"></div>
   </main>
 
-  <footer>Projections from Sleeper · scored with your league's settings</footer>
+  <footer>Projections from Sleeper · scored with your league's settings, or Sleeper's default when not signed in</footer>
 </div>
 
 <script>
@@ -255,7 +320,11 @@ const state = {
   horizon: 3,
   position: "",
   positions: [],
+  picked: store.get("players") || [],   // [{id, name, position, team, image}]
+  scoring: store.get("scoring") || "",  // "" = auto (league if signed in, else Sleeper default)
+  pWeeks: 4,
 };
+const signedIn = () => !!(state.user && state.leagueId);
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -368,9 +437,10 @@ function renderPosChips() {
 /* ---------- data loading ---------- */
 let loadToken = 0;
 async function load() {
-  if (!state.user || !state.leagueId) return;
   const token = ++loadToken;
   showError($("error"), "");
+  if (state.tab === "players") return loadPlayers(token);
+  if (!signedIn()) return renderSignedOut();
   const q = new URLSearchParams({ league_id: state.leagueId, user_id: state.user.user_id });
   if (state.week) q.set("week", state.week);
   try {
@@ -396,6 +466,155 @@ async function load() {
   }
 }
 
+function renderSignedOut() {
+  const what = state.tab === "lineup" ? "start/sit advice" : "waiver recommendations";
+  $("content").innerHTML = `<div class="card signed-out-cta">
+    <h2>Connect your Sleeper league</h2>
+    <p>Enter your Sleeper username to get ${what} for your roster.</p>
+    <button class="btn primary" data-action="sign-in">Connect Sleeper</button></div>`;
+}
+
+/* ---------- players ---------- */
+async function loadPlayers(token) {
+  renderPlayerChips();
+  if (!state.picked.length) {
+    $("content").innerHTML = `<div class="card center">
+      <div style="font-size:28px">🔎</div>
+      <div style="font-weight:650;margin-top:6px">Look up players</div>
+      <div class="muted">Search above to add one player for a projection breakdown, or several to compare.</div></div>`;
+    return;
+  }
+  loading("Pulling projections…");
+  const q = new URLSearchParams({ ids: state.picked.map((p) => p.id).join(","), weeks: state.pWeeks });
+  if (state.week) q.set("week", state.week);
+  if (state.scoring) q.set("scoring", state.scoring);
+  if (signedIn() && (!state.scoring || state.scoring === "league")) q.set("league_id", state.leagueId);
+  try {
+    const d = await api(`/api/players/compare?${q}`);
+    if (token !== loadToken) return;
+    setWeek(d.week);
+    renderPlayers(d);
+  } catch (e) {
+    if (token !== loadToken) return;
+    $("content").innerHTML = "";
+    showError($("error"), e.message);
+  }
+}
+
+function weekCell(w) {
+  if (w.bye) return `<span class="muted">BYE</span>`;
+  if (!w.projected) return `<span class="muted">—</span>`;
+  return `${fmt(w.points)}<span class="opp">vs ${esc(w.opponent)}</span>`;
+}
+
+function statLine(p, w) {
+  if (!w || !w.projected || w.bye || !p.key_stats.length) return "";
+  return `<div class="statline">${p.key_stats.map((k) =>
+    `<span><b>${fmt(w.stats[k.key] ?? 0)}</b> ${esc(k.label)}</span>`).join("")}</div>`;
+}
+
+function renderPlayers(d) {
+  const ps = d.players;
+  const multi = ps.length > 1;
+  const nWeeks = ps[0]?.weeks.length || 0;
+  const bestThis = multi ? Math.max(...ps.map((p) => p.this_week)) : null;
+
+  // Verdict for this week
+  let verdict = "";
+  if (multi) {
+    const sorted = [...ps].sort((a, b) => b.this_week - a.this_week);
+    const [top, next] = sorted;
+    verdict = top.this_week > 0
+      ? `<div class="card pad verdict" style="margin-bottom:14px">${avatar(top)}
+          <div><div class="label muted" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Week ${d.week} pick</div>
+          <div class="big" style="font-weight:750">Start ${esc(top.name)}</div>
+          <div class="muted">${fmt(top.this_week)} pts · <span class="gain">+${fmt(top.this_week - next.this_week)}</span> over ${esc(next.name)}</div></div></div>`
+      : `<div class="card pad" style="margin-bottom:14px">None of these players has a projection for week ${d.week}.</div>`;
+  }
+
+  const cards = ps.map((p) => {
+    const best = multi && p.this_week === bestThis && p.this_week > 0;
+    const w0 = p.weeks[0];
+    const thisWeek = w0 && w0.bye ? `<span class="muted" style="font-size:20px">BYE</span>`
+      : w0 && !w0.projected ? `<span class="muted" style="font-size:20px">No projection</span>` : fmt(p.this_week);
+    return `<div class="card pcard ${best ? "best" : ""}">${best ? '<span class="crown badge up">BEST</span>' : ""}
+      ${playerCell({ ...p, opponent: w0?.opponent })}
+      <div class="big">${thisWeek}</div>
+      <div class="sub"><span>Wk ${d.week}</span>${nWeeks > 1 ? `<span><b>${fmt(p.total)}</b> total</span><span><b>${fmt(p.average)}</b> avg</span>` : ""}</div>
+      ${statLine(p, w0)}</div>`;
+  }).join("");
+
+  let table = "";
+  if (nWeeks > 1 || multi) {
+    const head = `<tr><th>Week</th>${ps.map((p) => `<th>${esc(p.name)}</th>`).join("")}</tr>`;
+    const body = Array.from({ length: nWeeks }, (_, i) => {
+      const vals = ps.map((p) => p.weeks[i]);
+      const top = Math.max(...vals.map((w) => (w.projected && !w.bye ? w.points : -1)));
+      return `<tr><td>Wk ${vals[0].week}</td>${vals.map((w) =>
+        `<td class="${multi && w.projected && !w.bye && w.points === top && top > 0 ? "win" : ""}">${weekCell(w)}</td>`).join("")}</tr>`;
+    }).join("");
+    const foot = nWeeks > 1
+      ? `<tfoot><tr><td>Total</td>${ps.map((p) => `<td>${fmt(p.total)}</td>`).join("")}</tr></tfoot>` : "";
+    table = `<div class="card scroll-x"><table class="grid"><thead>${head}</thead><tbody>${body}</tbody>${foot}</table></div>`;
+  }
+
+  $("content").innerHTML = `${verdict}<div class="pcards">${cards}</div>${table}
+    <div class="muted" style="font-size:12px;margin-top:10px">Scoring: ${esc(d.scoring)}</div>`;
+}
+
+function renderPlayerChips() {
+  $("pchips").innerHTML = state.picked.map((p) =>
+    `<span class="pchip">${avatar(p)}${esc(p.name)}<button aria-label="Remove ${esc(p.name)}" data-remove="${esc(p.id)}">×</button></span>`).join("");
+}
+
+function renderScoringSelect() {
+  const opts = [["default", "Sleeper default (PPR)"], ["half", "Half PPR"], ["std", "Standard"]];
+  if (signedIn()) opts.unshift(["league", "My league scoring"]);
+  if (!signedIn() && state.scoring === "league") state.scoring = "";
+  const current = state.scoring || (signedIn() ? "league" : "default");
+  $("scoring").innerHTML = opts.map(([v, l]) => `<option value="${v}" ${v === current ? "selected" : ""}>${l}</option>`).join("");
+}
+
+function addPlayer(p) {
+  if (!state.picked.some((x) => x.id === p.id)) {
+    if (state.picked.length >= 8) return showError($("error"), "You can compare up to 8 players.");
+    state.picked.push({ id: p.id, name: p.name, position: p.position, team: p.team, image: p.image });
+    store.set("players", state.picked);
+  }
+  $("psearch").value = "";
+  closeSuggest();
+  load();
+}
+
+let suggestions = [], active = -1, searchTimer = null, searchSeq = 0;
+function closeSuggest() {
+  $("suggest").classList.add("hidden");
+  $("psearch").setAttribute("aria-expanded", "false");
+  suggestions = []; active = -1;
+}
+function renderSuggest() {
+  if (!suggestions.length) return closeSuggest();
+  $("suggest").innerHTML = suggestions.map((p, i) =>
+    `<li role="option" data-i="${i}" aria-selected="${i === active}"><div class="who-cell">${avatar(p)}
+      <div><div class="pname">${esc(p.name)}</div><div class="pmeta"><span>${esc(p.position)} · ${esc(p.team || "FA")}</span>${statusBadge(p)}</div></div></div></li>`).join("");
+  $("suggest").classList.remove("hidden");
+  $("psearch").setAttribute("aria-expanded", "true");
+}
+async function runSearch(q) {
+  const seq = ++searchSeq;
+  try {
+    const d = await api(`/api/players/search?q=${encodeURIComponent(q)}`);
+    if (seq !== searchSeq) return;
+    suggestions = d.results; active = suggestions.length ? 0 : -1;
+    if (!suggestions.length) {
+      $("suggest").innerHTML = `<li class="muted" style="cursor:default">No players match “${esc(q)}”</li>`;
+      $("suggest").classList.remove("hidden");
+      return;
+    }
+    renderSuggest();
+  } catch { closeSuggest(); }
+}
+
 function setWeek(w) {
   state.week = w;
   $("week-label").textContent = `Week ${w}`;
@@ -417,9 +636,14 @@ function showMain() {
   $("setup").classList.add("hidden");
   $("main").classList.remove("hidden");
   $("account").classList.remove("hidden");
-  $("who").textContent = state.user.display_name;
-  $("league-select").innerHTML = state.leagues.map((l) =>
-    `<option value="${esc(l.league_id)}" ${l.league_id === state.leagueId ? "selected" : ""}>${esc(l.name)}</option>`).join("");
+  document.querySelectorAll(".signed-in-only").forEach((el) => el.classList.toggle("hidden", !signedIn()));
+  document.querySelectorAll(".signed-out-only").forEach((el) => el.classList.toggle("hidden", signedIn()));
+  if (signedIn()) {
+    $("who").textContent = state.user.display_name;
+    $("league-select").innerHTML = state.leagues.map((l) =>
+      `<option value="${esc(l.league_id)}" ${l.league_id === state.leagueId ? "selected" : ""}>${esc(l.name)}</option>`).join("");
+  }
+  renderScoringSelect();
   selectTab(state.tab, false);
   load();
 }
@@ -429,6 +653,7 @@ function selectTab(tab, reload = true) {
   store.set("tab", tab);
   document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", t.dataset.tab === tab));
   document.querySelectorAll(".waivers-only").forEach((el) => el.classList.toggle("hidden", tab !== "waivers"));
+  document.querySelectorAll(".players-only").forEach((el) => el.classList.toggle("hidden", tab !== "players"));
   if (reload) load();
 }
 
@@ -471,6 +696,35 @@ $("league-list").addEventListener("click", (e) => {
 });
 $("league-select").addEventListener("change", (e) => { state.leagueId = e.target.value; store.set("league", state.leagueId); load(); });
 $("switch-user").addEventListener("click", () => { store.del("league"); state.leagueId = null; showSetup(); });
+$("sign-in").addEventListener("click", showSetup);
+$("skip-setup").addEventListener("click", () => { state.tab = "players"; showMain(); });
+$("content").addEventListener("click", (e) => { if (e.target.closest("[data-action=sign-in]")) showSetup(); });
+$("scoring").addEventListener("change", (e) => { state.scoring = e.target.value; store.set("scoring", state.scoring); load(); });
+$("p-weeks").addEventListener("change", (e) => { state.pWeeks = +e.target.value; load(); });
+$("pchips").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-remove]");
+  if (!b) return;
+  state.picked = state.picked.filter((p) => p.id !== b.dataset.remove);
+  store.set("players", state.picked);
+  load();
+});
+$("psearch").addEventListener("input", (e) => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  if (q.length < 2) { searchSeq++; return closeSuggest(); }
+  searchTimer = setTimeout(() => runSearch(q), 180);
+});
+$("psearch").addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" && suggestions.length) { e.preventDefault(); active = (active + 1) % suggestions.length; renderSuggest(); }
+  else if (e.key === "ArrowUp" && suggestions.length) { e.preventDefault(); active = (active - 1 + suggestions.length) % suggestions.length; renderSuggest(); }
+  else if (e.key === "Enter") { e.preventDefault(); if (suggestions[active]) addPlayer(suggestions[active]); }
+  else if (e.key === "Escape") closeSuggest();
+});
+$("suggest").addEventListener("mousedown", (e) => {
+  const li = e.target.closest("li[data-i]");
+  if (li) { e.preventDefault(); addPlayer(suggestions[+li.dataset.i]); }
+});
+$("psearch").addEventListener("blur", () => setTimeout(closeSuggest, 100));
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => selectTab(t.dataset.tab)));
 $("week-prev").addEventListener("click", () => { if (state.week > 1) { state.week--; load(); } });
 $("week-next").addEventListener("click", () => { if (state.week < 18) { state.week++; load(); } });
@@ -485,7 +739,8 @@ $("pos-chips").addEventListener("click", (e) => {
 });
 
 /* ---------- boot ---------- */
-if (state.user && state.leagueId) showMain(); else showSetup();
+api("/api/state").then((s) => { if (!state.week && s.week) setWeek(s.week); }).catch(() => {});
+if (signedIn() || state.tab === "players") showMain(); else showSetup();
 </script>
 </body>
 </html>

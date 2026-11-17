@@ -47,6 +47,21 @@ def install_deps() -> None:
         sys.exit("Dependency install failed (see errors above).")
 
 
+def run_tests(args: list[str]) -> None:
+    """`python3 run.py test [pytest args]`: install pytest locally if needed and run the suite."""
+    import importlib.util
+    import os
+
+    if importlib.util.find_spec("pytest") is None:
+        print("Installing pytest into the local deps folder ...", flush=True)
+        cmd = [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
+               "--upgrade", "--target", str(DEPS), "pytest"]
+        if subprocess.call(cmd) != 0:
+            sys.exit("Could not install pytest.")
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(DEPS)])}
+    sys.exit(subprocess.call([sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *args], cwd=ROOT, env=env))
+
+
 def main() -> None:
     if sys.version_info < MIN_PYTHON:
         sys.exit(f"FantasyCoach needs Python {'.'.join(map(str, MIN_PYTHON))}+; you have {platform.python_version()}.")
@@ -62,6 +77,10 @@ def main() -> None:
         still = missing_modules()
         if still:
             sys.exit(f"Still missing after install: {', '.join(still)}")
+
+    if sys.argv[1:2] == ["test"]:
+        run_tests(sys.argv[2:])
+        return
 
     from fantasycoach.cli import main as cli_main
 

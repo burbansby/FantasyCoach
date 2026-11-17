@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
+from . import players as players_mod
 from . import service
 from .config import cache_dir
 from .models import Player
@@ -115,5 +116,63 @@ def waivers(
                 "gain": pk.gain,
             }
             for pk in picks
+        ],
+    }
+
+
+def _image(pid: str, position: str, team: str | None) -> str:
+    return player_json(Player(pid, "", position, team))["image"]
+
+
+@app.get("/api/players/search")
+def player_search(q: str = Query(..., min_length=2, max_length=50), limit: int = Query(8, ge=1, le=20)) -> dict:
+    results = players_mod.search(client.players(), q, limit)
+    return {
+        "results": [
+            {
+                "id": pid,
+                "name": players_mod.display_name(info),
+                "position": info.get("position"),
+                "team": info.get("team"),
+                "injury_status": info.get("injury_status"),
+                "image": _image(pid, info.get("position"), info.get("team")),
+            }
+            for pid, info in results
+        ]
+    }
+
+
+@app.get("/api/players/compare")
+def player_compare(
+    ids: str = Query(..., description="Comma-separated Sleeper player ids"),
+    scoring: str | None = Query(None, pattern="^(league|default|half|std)$"),
+    league_id: str | None = None,
+    week: int | None = Query(None, ge=1, le=18),
+    weeks: int = Query(4, ge=1, le=8),
+) -> dict:
+    id_list = [i for i in dict.fromkeys(x.strip() for x in ids.split(",")) if i][:8]
+    label, start, outs = service.compare_players(client, id_list, scoring, league_id, week, weeks)
+    return {
+        "scoring": label,
+        "week": start,
+        "players": [
+            {
+                "id": o.player_id,
+                "name": o.name,
+                "position": o.position,
+                "team": o.team,
+                "injury_status": o.injury_status,
+                "image": _image(o.player_id, o.position, o.team),
+                "total": o.total,
+                "average": o.average,
+                "this_week": o.this_week,
+                "key_stats": [{"key": k, "label": lbl} for k, lbl in players_mod.KEY_STATS.get(o.position, [])],
+                "weeks": [
+                    {"week": w.week, "opponent": w.opponent, "points": w.points, "raw": w.raw,
+                     "stats": w.stats, "bye": w.bye, "projected": w.projected}
+                    for w in o.weeks
+                ],
+            }
+            for o in outs
         ],
     }

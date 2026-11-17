@@ -8,6 +8,11 @@ roster settings and scoring rules, pulls weekly projections, and gives stats-dri
 - **Start/sit (`lineup`)** – builds the highest-projected legal lineup from your roster
   (handles FLEX, SUPER_FLEX, WR/RB and WR/TE flex, IDP), flags injuries and byes, and
   shows exactly which players to swap and the projected point gain.
+- **Player lookup & compare (`players`)** – no sign-in needed. Search any player or team
+  defense and see week-by-week projections, key stat lines, totals and averages; add
+  several to compare side by side with a "start this one" pick for the week. Scored with
+  your league's settings when signed in, otherwise Sleeper's default (PPR), with Half PPR
+  and Standard also available.
 - **Waiver wire (`waivers`)** – ranks free agents by projected points over the next N weeks
   and pairs each with your weakest same-position player as the drop, sorted by net gain.
 
@@ -35,8 +40,9 @@ Use `python3 run.py web --host 0.0.0.0 --no-open` to reach it from other devices
 
 ## Web interface
 
-Enter your Sleeper username, pick a league, and switch between **Start / Sit** and
-**Waiver Wire**. Your username and league are remembered in the browser. JSON API docs
+Enter your Sleeper username, pick a league, and switch between **Start / Sit**,
+**Waiver Wire** and **Players**. The **Players** tab works without signing in (use the
+"look up players without signing in" link). Your username and league are remembered in the browser. JSON API docs
 are at `/api/docs`.
 
 ## Command line
@@ -48,6 +54,8 @@ python3 run.py lineup --week 12
 python3 run.py waivers                                     # next 3 weeks
 python3 run.py waivers --position RB --weeks 5
 python3 run.py leagues                                     # list your leagues
+python3 run.py players "Bijan Robinson" Gibbs Chiefs       # compare (no setup needed)
+python3 run.py players Kelce --weeks 6 --scoring half
 ```
 
 Any command accepts `--league <id>` to target a league other than your default.
@@ -62,8 +70,8 @@ Config and an HTTP cache live in `~/.fantasycoach` (override with `FANTASYCOACH_
 
 ## Development
 
-To run the tests, install the package with its dev extras (`pip install -e ".[dev]"`) and
-run `pytest`.
+Run the tests with `python3 run.py test` (installs pytest into `.deps/` on first use).
 
 Layout: `sleeper.py` (API client + cache) → `league.py` (league/roster context) →
-`scoring.py`, `lineup.py`, `waivers.py` (pure logic, unit tested) → `cli.py`.
+`scoring.py`, `lineup.py`, `waivers.py`, `players.py` (pure logic, unit tested) → `service.py`
+(shared workflows) → `cli.py` and `web.py` + `static/index.html`.

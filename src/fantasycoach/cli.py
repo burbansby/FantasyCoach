@@ -150,6 +150,66 @@ def waivers(
 
 
 @app.command()
+def players(
+    names: list[str] = typer.Argument(..., help='Player names, e.g. "Bijan Robinson" Gibbs'),
+    week: Optional[int] = typer.Option(None, "--week", "-w", help="First week (default: current)"),
+    weeks: int = typer.Option(4, "--weeks", "-n", min=1, max=8, help="How many weeks to show"),
+    scoring: Optional[str] = typer.Option(
+        None, "--scoring", "-s",
+        help="league | default | half | std  (default: your league if set up, else Sleeper default)",
+    ),
+    league: Optional[str] = typer.Option(None, "--league", "-l", help="Use this league's scoring"),
+):
+    """Look up one or more players and compare their projections. No setup required."""
+    from . import players as players_mod
+
+    if scoring not in (None, "league", *players_mod.SCORING_PRESETS):
+        console.print("[red]--scoring must be one of: league, default, half, std[/]")
+        raise typer.Exit(1)
+    client = _client()
+    db = client.players()
+    ids: list[str] = []
+    for name in names:
+        matches = players_mod.search(db, name, limit=4)
+        if not matches:
+            console.print(f"[red]No player found for '{name}'[/]")
+            continue
+        pid, info = matches[0]
+        ids.append(pid)
+        if len(matches) > 1 and players_mod.normalize(name) != players_mod.normalize(players_mod.display_name(info)):
+            others = ", ".join(f"{players_mod.display_name(i)} ({i.get('position')})" for _, i in matches[1:])
+            console.print(f"[dim]'{name}' -> {players_mod.display_name(info)}  (also matched: {others})[/]")
+    if not ids:
+        raise typer.Exit(1)
+
+    league_id = league or (Config.load().league_id if scoring in (None, "league") else None)
+    label, start, outs = service.compare_players(client, list(dict.fromkeys(ids)), scoring, league_id, week, weeks)
+
+    table = Table(title=f"Projections - {label}")
+    table.add_column("Player")
+    for w in outs[0].weeks:
+        table.add_column(f"Wk {w.week}", justify="right")
+    table.add_column("Total", justify="right")
+    table.add_column("Avg", justify="right")
+    best = {i: max(o.weeks[i].points for o in outs) for i in range(len(outs[0].weeks))}
+    for o in sorted(outs, key=lambda o: o.total, reverse=True):
+        status = f" [red]{o.injury_status}[/]" if o.injury_status else ""
+        cells = []
+        for i, w in enumerate(o.weeks):
+            txt = "[dim]BYE[/]" if w.bye else ("[dim]-[/]" if not w.projected else f"{w.points:.1f}")
+            if len(outs) > 1 and w.opponent and w.points == best[i] and w.points > 0:
+                txt = f"[bold green]{txt}[/]"
+            cells.append(f"{txt}\n[dim]{w.opponent or ''}[/]")
+        table.add_row(
+            f"{o.name}{status}\n[dim]{o.position} - {o.team or 'FA'}[/]", *cells, f"{o.total:.1f}", f"{o.average:.1f}"
+        )
+    console.print(table)
+    if len(outs) > 1:
+        top = max(outs, key=lambda o: o.this_week)
+        console.print(f"Week {start}: start [bold]{top.name}[/] ({top.this_week:.1f} pts)")
+
+
+@app.command()
 def web(
     host: str = typer.Option("127.0.0.1", help="Interface to bind (use 0.0.0.0 to allow other devices)"),
     port: int = typer.Option(8000, help="Port to serve on"),
