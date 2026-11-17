@@ -37,6 +37,10 @@ def _status(p: Player) -> str:
     return f"[{color}]{p.injury_status}[/]"
 
 
+def _range(r) -> str:
+    return f"{r.floor:.1f}-{r.ceiling:.1f}" if r else ""
+
+
 def _opp(p: Player) -> str:
     return f"vs {p.opponent}" if p.opponent else "[dim]BYE/—[/]"
 
@@ -93,32 +97,45 @@ def lineup(
     ctx, advice = service.lineup_advice(_client(), league_id, cfg.user_id, week)
 
     table = Table(title=f"{ctx.league['name']} — Week {ctx.week} recommended lineup")
-    for col in ("Slot", "Player", "Matchup", "Status", "Proj"):
-        table.add_column(col, justify="right" if col == "Proj" else "left")
+    for col in ("Slot", "Player", "Matchup", "Status", "Proj", "Floor-Ceiling"):
+        table.add_column(col, justify="right" if col in ("Proj", "Floor-Ceiling") else "left")
     for s in advice.recommended:
         p = s.player
         if p is None:
-            table.add_row(s.slot, "[red]EMPTY[/]", "", "", "")
+            table.add_row(s.slot, "[red]EMPTY[/]", "", "", "", "")
             continue
-        new = " [green]▲[/]" if p in advice.to_start else ""
-        table.add_row(s.slot, p.label + new, _opp(p), _status(p), f"{p.adjusted:.1f}")
+        new = " [green]▲ start[/]" if p in advice.to_start else ""
+        table.add_row(s.slot, p.label + new, _opp(p), _status(p), f"{p.projected:.1f}", _range(p.range))
     table.add_section()
-    for p in sorted(advice.bench, key=lambda p: p.adjusted, reverse=True):
-        table.add_row("BN", f"[dim]{p.label}[/]", _opp(p), _status(p), f"[dim]{p.adjusted:.1f}[/]")
+    for p in sorted(advice.bench, key=lambda p: p.projected, reverse=True):
+        if p in advice.to_bench:
+            table.add_row("BN", f"{p.label} [red]▼ bench[/]", _opp(p), _status(p), f"{p.projected:.1f}", _range(p.range))
+        else:
+            table.add_row("BN", f"[dim]{p.label}[/]", _opp(p), _status(p), f"[dim]{p.projected:.1f}[/]",
+                          f"[dim]{_range(p.range)}[/]")
     console.print(table)
 
     if advice.to_start:
         console.print("[bold]Changes:[/]")
         for p in advice.to_start:
-            console.print(f"  [green]Start[/] {p.label}  {p.adjusted:.1f}")
+            console.print(f"  [green]Start[/] {p.label}  {p.projected:.1f}")
         for p in advice.to_bench:
-            console.print(f"  [red]Bench[/] {p.label}  {p.adjusted:.1f}")
+            console.print(f"  [red]Bench[/] {p.label}  {p.projected:.1f}")
         console.print(
             f"Projected: {advice.current_total:.1f} → [bold]{advice.recommended_total:.1f}[/] "
             f"([green]+{advice.gain:.1f}[/])"
         )
     else:
         console.print(f"[green]Your current lineup is optimal.[/] Projected {advice.recommended_total:.1f}")
+    r = advice.recommended_range
+    if r:
+        console.print(
+            f"Team range: floor [bold]{r.floor:.1f}[/] - ceiling [bold]{r.ceiling:.1f}[/] "
+            f"(expected {r.expected:.1f}; 95% of weeks score above the floor, 95% below the ceiling)"
+        )
+        c = advice.current_range
+        if advice.to_start and c:
+            console.print(f"[dim]Current lineup range: {c.floor:.1f} - {c.ceiling:.1f} (expected {c.expected:.1f})[/]")
 
 
 @app.command()
@@ -162,6 +179,7 @@ def players(
 ):
     """Look up one or more players and compare their projections. No setup required."""
     from . import players as players_mod
+    from .market import STAT_LABELS
 
     if scoring not in (None, "league", *players_mod.SCORING_PRESETS):
         console.print("[red]--scoring must be one of: league, default, half, std[/]")
@@ -204,9 +222,26 @@ def players(
             f"{o.name}{status}\n[dim]{o.position} - {o.team or 'FA'}[/]", *cells, f"{o.total:.1f}", f"{o.average:.1f}"
         )
     console.print(table)
+
+    ranged = [(o, o.weeks[0]) for o in outs if o.weeks and o.weeks[0].range]
+    if ranged:
+        out_table = Table(title=f"Week {start} outcome range (90% of simulated games fall between floor and ceiling)")
+        for col in ("Player", "Sleeper", "Expected", "Floor", "Ceiling", "Based on"):
+            out_table.add_column(col, justify="left" if col in ("Player", "Based on") else "right")
+        for o, w in sorted(ranged, key=lambda x: x[1].range.expected, reverse=True):
+            r = w.range
+            source = ("DraftKings " + ", ".join(STAT_LABELS.get(s, s) for s in r.market_stats)) if r.market_stats else (
+                "team total + history" if r.team_points else "history")
+            out_table.add_row(o.name, f"{w.points:.1f}", f"[bold]{r.expected:.1f}[/]", f"{r.floor:.1f}",
+                              f"{r.ceiling:.1f}", f"[dim]{source}[/]")
+        console.print(out_table)
     if len(outs) > 1:
         top = max(outs, key=lambda o: o.this_week)
         console.print(f"Week {start}: start [bold]{top.name}[/] ({top.this_week:.1f} pts)")
+        if len(ranged) > 1:
+            safest = max(ranged, key=lambda x: x[1].range.floor)[0]
+            upside = max(ranged, key=lambda x: x[1].range.ceiling)[0]
+            console.print(f"Safest floor: [bold]{safest.name}[/] - Highest ceiling: [bold]{upside.name}[/]")
 
 
 @app.command()

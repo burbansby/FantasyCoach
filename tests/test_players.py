@@ -6,7 +6,7 @@ DB = {
     "1": {"full_name": "Jonathan Taylor", "first_name": "Jonathan", "last_name": "Taylor",
           "position": "RB", "team": "IND", "search_rank": 10},
     "2": {"full_name": "Taylor Heinicke", "first_name": "Taylor", "last_name": "Heinicke",
-          "position": "QB", "team": None, "search_rank": 900},
+          "position": "QB", "team": None, "search_rank": 900, "injury_status": "Out"},
     "3": {"full_name": "Amon-Ra St. Brown", "first_name": "Amon-Ra", "last_name": "St. Brown",
           "position": "WR", "team": "DET", "search_rank": 5},
     "KC": {"first_name": "Kansas City", "last_name": "Chiefs", "position": "DEF", "team": "KC"},
@@ -85,3 +85,13 @@ def test_compare_endpoint_works_without_sign_in(monkeypatch):
     assert [p["id"] for p in body["players"]] == ["1", "3"]
     assert body["players"][0]["weeks"][1]["bye"] is True
     assert api.get("/api/players/compare", params={"ids": "1", "scoring": "bogus"}).status_code == 422
+
+
+def test_outlook_uses_projection_even_when_listed_out():
+    db = dict(DB)
+    db["1"] = {**DB["1"], "injury_status": "Out"}
+    c = FakeClient()
+    c.players = lambda: db
+    _, _, outs = service.compare_players(c, ["1"], weeks=1)
+    assert outs[0].injury_status == "Out"
+    assert outs[0].weeks[0].points == 18

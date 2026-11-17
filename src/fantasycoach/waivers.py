@@ -31,7 +31,7 @@ def recommend(
     """Pair each free agent with your weakest same-position player.
 
     ``horizon_value`` maps player_id -> projected points summed over the
-    upcoming weeks (injury-adjusted). Players in ``protected_ids`` (e.g. on IR)
+    upcoming weeks. Players in ``protected_ids`` (e.g. on IR)
     are never suggested as drops. Only picks with a positive gain are returned.
     """
     weakest: dict[str, Player] = {}
@@ -51,7 +51,7 @@ def recommend(
             continue
         drop = weakest.get(fa.position)
         drop_value = horizon_value.get(drop.player_id, 0.0) if drop else 0.0
-        pick = WaiverPick(add=fa, add_value=round(value, 2), drop=drop, drop_value=round(drop_value, 2), this_week=fa.adjusted)
+        pick = WaiverPick(add=fa, add_value=round(value, 2), drop=drop, drop_value=round(drop_value, 2), this_week=fa.projected)
         if pick.gain > 0:
             picks.append(pick)
 

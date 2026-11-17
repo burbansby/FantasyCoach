@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
-from .scoring import availability_factor, score
+from .scoring import score
 from .sleeper import SleeperClient
 
 FANTASY_POSITIONS = ["DEF", "K", "QB", "RB", "TE", "WR"]
@@ -90,10 +91,10 @@ def search(players_db: dict[str, dict], query: str, limit: int = 8) -> list[tupl
 class WeekLine:
     week: int
     opponent: str | None
-    points: float  # injury-adjusted
-    raw: float
+    points: float
     stats: dict[str, float]
     projected: bool = True  # False when Sleeper has no projection row (e.g. free agent)
+    range: Any = None  # ranges.Range: expected / floor / ceiling, when available
 
     @property
     def bye(self) -> bool:
@@ -146,14 +147,11 @@ def outlooks(
         for out in results:
             row = rows.get(out.player_id)
             stats = (row or {}).get("stats") or {}
-            raw = score(stats, scoring) if row else 0.0
-            factor = availability_factor(out.injury_status, weeks_ahead=offset)
             keys = [k for k, _ in KEY_STATS.get(out.position, [])]
             out.weeks.append(WeekLine(
                 week=week,
                 opponent=(row or {}).get("opponent"),
-                points=round(raw * factor, 2),
-                raw=raw,
+                points=score(stats, scoring) if row else 0.0,
                 stats={k: round(stats.get(k) or 0.0, 1) for k in keys},
                 projected=row is not None,
             ))

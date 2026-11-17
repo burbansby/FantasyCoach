@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from .models import Player
 
@@ -40,6 +41,9 @@ class LineupAdvice:
     recommended_total: float
     to_start: list[Player]  # recommended starters not currently starting
     to_bench: list[Player]  # current starters not in the recommended lineup
+    # Whole-lineup expected / 5th-95th percentile range (ranges.TeamRange), when computed.
+    recommended_range: Any = None
+    current_range: Any = None
 
     @property
     def gain(self) -> float:
@@ -58,7 +62,7 @@ def optimize(players: list[Player], slots: list[str]) -> tuple[list[LineupSlot],
     (position ⊂ FLEX ⊂ SUPER_FLEX).
     """
     order = sorted(range(len(slots)), key=lambda i: len(SLOT_ELIGIBILITY.get(slots[i], {slots[i]})))
-    pool = sorted(players, key=lambda p: p.adjusted, reverse=True)
+    pool = sorted(players, key=lambda p: p.projected, reverse=True)
     filled: dict[int, Player | None] = {}
     for i in order:
         choice = next((p for p in pool if can_fill(p, slots[i])), None)
@@ -79,8 +83,8 @@ def advise(players: list[Player], slots: list[str], current_starter_ids: list[st
     return LineupAdvice(
         recommended=lineup,
         bench=bench,
-        current_total=round(sum(p.adjusted for p in current), 2),
-        recommended_total=round(sum(p.adjusted for p in rec_players), 2),
+        current_total=round(sum(p.projected for p in current), 2),
+        recommended_total=round(sum(p.projected for p in rec_players), 2),
         to_start=[p for p in rec_players if p.player_id not in current_ids],
         to_bench=[p for p in current if p.player_id not in rec_ids],
     )

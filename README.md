@@ -13,12 +13,31 @@ roster settings and scoring rules, pulls weekly projections, and gives stats-dri
   several to compare side by side with a "start this one" pick for the week. Scored with
   your league's settings when signed in, otherwise Sleeper's default (PPR), with Half PPR
   and Standard also available.
+- **Outcome ranges (floor / expected / ceiling)** – shown next to Sleeper's projection on
+  the lineup and in player lookup. Each player's game is simulated 4,000 times:
+  - the centre of each stat comes from **live DraftKings prop lines** (via ESPN's public odds
+    feed, no key or quota) when posted, otherwise Sleeper's projection; lines are calibrated
+    each week against Sleeper so they shift players relative to each other without biasing
+    the overall level;
+  - touchdown rates scale with each team's **Vegas implied total** (from spread + over/under);
+  - the spread comes from how far the player's past games landed from projections (Sleeper
+    history, shrunk toward their position), with stats correlated within a game.
+  Floor = 10th percentile, ceiling = 90th percentile. In a backtest over 2026 weeks 3–10
+  (1,904 player-games, spreads learned only from earlier weeks) 10.8% of games fell below the
+  floor and 8.4% above the ceiling. Sleeper's projection still drives start/sit and waiver
+  decisions.
+- **Team floor / ceiling** – the start/sit page shows the whole lineup's range (recommended
+  vs current). Players are simulated together and summed week by week (teammates on the same
+  NFL team are correlated), giving a floor the team beats in 95% of weeks and a ceiling it
+  stays under in 95%. Backtest on 2,400 random lineups from 2026 weeks 3–10: 4.8% fell below
+  the floor and 5.0% above the ceiling.
 - **Waiver wire (`waivers`)** – ranks free agents by projected points over the next N weeks
   and pairs each with your weakest same-position player as the drop, sorted by net gain.
 
 Projections are scored with **your league's** `scoring_settings`, so PPR, half-PPR, TE
-premium, 6-pt passing TDs, etc. are all respected. Players listed Out/IR/Suspended are
-projected at 0; Doubtful players are discounted to 25%.
+premium, 6-pt passing TDs, etc. are all respected. Injury designations are shown as badges
+but never change a projection (official reports lag), so you always see Sleeper's actual
+projected points.
 
 ## Quick start (no virtual environment)
 
@@ -65,13 +84,17 @@ Config and an HTTP cache live in `~/.fantasycoach` (override with `FANTASYCOACH_
 ## Data sources
 
 - Sleeper public API (`api.sleeper.app/v1`) for users, leagues, rosters, and players.
-- Sleeper's undocumented projections endpoint (`api.sleeper.app/projections/nfl/...`).
-  It's what the Sleeper app uses but isn't officially supported and could change.
+- Sleeper's undocumented projections and stats endpoints (`api.sleeper.app/projections/...`,
+  `/stats/...`). They're what the Sleeper app uses but aren't officially supported.
+- ESPN's public odds feed (`site.api.espn.com`, `sports.core.api.espn.com`) for DraftKings
+  game lines and player prop lines. Unofficial; if it's unavailable, ranges fall back to the
+  history-only model. Props are usually posted for every game by the weekend.
 
 ## Development
 
 Run the tests with `python3 run.py test` (installs pytest into `.deps/` on first use).
 
 Layout: `sleeper.py` (API client + cache) → `league.py` (league/roster context) →
-`scoring.py`, `lineup.py`, `waivers.py`, `players.py` (pure logic, unit tested) → `service.py`
+`scoring.py`, `lineup.py`, `waivers.py`, `players.py`, `ranges.py` (pure logic, unit tested);
+`market.py` (ESPN odds) + `history.py` (projection misses) → `range_engine.py` → `service.py`
 (shared workflows) → `cli.py` and `web.py` + `static/index.html`.

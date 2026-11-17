@@ -5,6 +5,7 @@ from __future__ import annotations
 from . import lineup as lineup_mod
 from . import players as players_mod
 from . import waivers as waivers_mod
+from .range_engine import engine_for
 from .league import LeagueContext
 from .lineup import LineupAdvice
 from .sleeper import SleeperClient
@@ -23,6 +24,18 @@ def lineup_advice(
     reserve = _reserve_ids(ctx)
     players = [p for p in ctx.my_players(projections) if p.player_id not in reserve]
     advice = lineup_mod.advise(players, ctx.starter_slots, ctx.my_roster.get("starters") or [])
+    current_week = int(client.state().get("week") or ctx.week)
+    engine = engine_for(client)
+    found = engine.week_ranges(ctx.season, ctx.week, current_week, [p.player_id for p in players], ctx.scoring)
+    for p in players:
+        p.range = found.get(p.player_id)
+    starters = [s.player.player_id for s in advice.recommended if s.player]
+    advice.recommended_range = engine.lineup_range(ctx.season, ctx.week, current_week, starters, ctx.scoring)
+    current = [pid for pid in ctx.my_roster.get("starters") or [] if pid and pid != "0"]
+    advice.current_range = (
+        advice.recommended_range if set(current) == set(starters)
+        else engine.lineup_range(ctx.season, ctx.week, current_week, current, ctx.scoring)
+    )
     return ctx, advice
 
 
@@ -69,9 +82,18 @@ def compare_players(
     league_id: str | None = None,
     week: int | None = None,
     weeks: int = 4,
+    with_ranges: bool = True,
 ) -> tuple[str, int, list[players_mod.PlayerOutlook]]:
     state = client.state()
     start = week or int(state.get("week") or 1)
     label, rules = resolve_scoring(client, scoring, league_id)
     season = str(state.get("league_season") or state.get("season"))
-    return label, start, players_mod.outlooks(client, player_ids, rules, season, start, weeks)
+    outs = players_mod.outlooks(client, player_ids, rules, season, start, weeks)
+    if outs and with_ranges:
+        engine = engine_for(client)
+        current_week = int(state.get("week") or start)
+        for i, w in enumerate(outs[0].weeks):
+            found = engine.week_ranges(season, w.week, current_week, player_ids, rules)
+            for o in outs:
+                o.weeks[i].range = found.get(o.player_id)
+    return label, start, outs

@@ -35,16 +35,29 @@ class SleeperClient:
 
     # --- low level -----------------------------------------------------------------
 
-    def _get(self, path: str, params: list[tuple[str, str]] | None = None, ttl: int = TTL_DEFAULT) -> Any:
+    def _get(
+        self,
+        path: str,
+        params: list[tuple[str, str]] | None = None,
+        ttl: int = TTL_DEFAULT,
+        persist: bool = True,
+        memo: bool = True,
+    ) -> Any:
+        """GET JSON with an in-memory memo and on-disk cache.
+
+        ``path`` may be relative to the Sleeper API or an absolute URL. Set ``persist``/``memo``
+        to False for large one-off downloads that callers condense and cache themselves.
+        """
         key = path + "?" + "&".join(f"{k}={v}" for k, v in (params or []))
         hit = self._mem.get(key)
         if hit and time.time() - hit[0] < ttl:
             return hit[1]
 
-        cache_file = self._cache_file(path, params)
+        cache_file = self._cache_file(path, params) if persist else None
         if cache_file and cache_file.exists() and time.time() - cache_file.stat().st_mtime < ttl:
             data = json.loads(cache_file.read_text(encoding="utf-8"))
-            self._mem[key] = (cache_file.stat().st_mtime, data)
+            if memo:
+                self._mem[key] = (cache_file.stat().st_mtime, data)
             return data
 
         resp = self.http.get(path, params=params)
@@ -55,7 +68,8 @@ class SleeperClient:
         if cache_file:
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(json.dumps(data), encoding="utf-8")
-        self._mem[key] = (time.time(), data)
+        if memo:
+            self._mem[key] = (time.time(), data)
         return data
 
     def _cache_file(self, path: str, params: list[tuple[str, str]] | None) -> Path | None:
@@ -94,6 +108,21 @@ class SleeperClient:
         """All NFL players keyed by player_id (~5MB, cached for a day)."""
         return self._get("/v1/players/nfl", ttl=TTL_PLAYERS)
 
-    def projections(self, season: str, week: int, positions: list[str]) -> list[dict]:
+    def fetch_json(self, url: str, params: list[tuple[str, str]] | None = None, ttl: int = TTL_DEFAULT) -> Any:
+        """Cached GET of any absolute JSON URL (used for ESPN odds)."""
+        return self._get(url, params=params, ttl=ttl)
+
+    def stats(
+        self, season: str, week: int, positions: list[str] | None = None, persist: bool = True, memo: bool = True
+    ) -> list[dict]:
+        """Actual weekly stat lines (same stat keys as projections), optionally filtered by position."""
+        params = [("season_type", "regular")] + [("position[]", p) for p in sorted(positions or [])]
+        return self._get(f"/stats/nfl/{season}/{week}", params=params, ttl=TTL_PROJECTIONS,
+                         persist=persist, memo=memo) or []
+
+    def projections(
+        self, season: str, week: int, positions: list[str], persist: bool = True, memo: bool = True
+    ) -> list[dict]:
         params = [("season_type", "regular")] + [("position[]", p) for p in sorted(positions)]
-        return self._get(f"/projections/nfl/{season}/{week}", params=params, ttl=TTL_PROJECTIONS) or []
+        return self._get(f"/projections/nfl/{season}/{week}", params=params, ttl=TTL_PROJECTIONS,
+                         persist=persist, memo=memo) or []

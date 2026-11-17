@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from .lineup import NON_STARTER_SLOTS, SLOT_ELIGIBILITY
 from .models import Player
-from .scoring import availability_factor, score
+from .scoring import score
 from .sleeper import SleeperClient, SleeperError
 
 
@@ -89,18 +89,15 @@ class LeagueContext:
             injury_status=status,
             opponent=(projection or {}).get("opponent"),
             projected=projected,
-            adjusted=round(projected * availability_factor(status), 2),
             eligible=eligible,
         )
 
     def horizon_values(self, client: SleeperClient, weeks: int) -> dict[str, float]:
-        """Injury-adjusted projected points per player summed over ``weeks`` weeks from ``self.week``."""
+        """Projected points per player summed over ``weeks`` weeks from ``self.week``."""
         totals: dict[str, float] = {}
         for offset in range(weeks):
             for pid, row in self.projections_by_id(client, self.week + offset).items():
-                p = self.build_player(pid, row)
-                factor = availability_factor(p.injury_status, weeks_ahead=offset)
-                totals[pid] = round(totals.get(pid, 0.0) + p.projected * factor, 2)
+                totals[pid] = round(totals.get(pid, 0.0) + self.build_player(pid, row).projected, 2)
         return totals
 
     def my_players(self, projections: dict[str, dict]) -> list[Player]:

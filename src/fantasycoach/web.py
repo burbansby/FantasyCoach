@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
@@ -11,12 +13,30 @@ from . import players as players_mod
 from . import service
 from .config import cache_dir
 from .models import Player
+from .market import STAT_LABELS
+from .range_engine import engine_for
 from .sleeper import SleeperClient, SleeperError
 
 STATIC = Path(__file__).parent / "static"
-
-app = FastAPI(title="FantasyCoach", docs_url="/api/docs", redoc_url=None)
 client = SleeperClient(cache_dir=cache_dir())
+
+
+def _warm() -> None:
+    try:
+        s = client.state()
+        engine_for(client).warm(str(s.get("league_season") or s.get("season")), int(s.get("week") or 1))
+    except Exception:
+        pass
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    # Load history and betting lines in the background so the first page isn't slow.
+    threading.Thread(target=_warm, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="FantasyCoach", docs_url="/api/docs", redoc_url=None, lifespan=_lifespan)
 
 
 @app.exception_handler(SleeperError)
@@ -39,9 +59,35 @@ def player_json(p: Player | None) -> dict | None:
         "opponent": p.opponent,
         "injury_status": p.injury_status,
         "projected": p.projected,
-        "adjusted": p.adjusted,
         "image": image,
+        "range": range_json(p.range),
     }
+
+
+def range_json(r) -> dict | None:
+    if r is None:
+        return None
+    return {
+        "expected": r.expected,
+        "floor": r.floor,
+        "ceiling": r.ceiling,
+        "lines": [STAT_LABELS.get(s, s) for s in r.market_stats],
+        "team_points": r.team_points,
+        "market": r.uses_market,
+    }
+
+
+def team_range_json(r) -> dict | None:
+    return None if r is None else {"expected": r.expected, "floor": r.floor, "ceiling": r.ceiling}
+
+
+def market_json(week: int) -> dict | None:
+    """Coverage of live betting lines for the current week (None for other weeks)."""
+    s = client.state()
+    if week != int(s.get("week") or 0):
+        return None
+    m = engine_for(client).current_market(str(s.get("league_season") or s.get("season")), week)
+    return {"games": m.games, "players": len(m.lines), "error": m.error}
 
 
 @app.get("/", include_in_schema=False)
@@ -82,12 +128,15 @@ def lineup(league_id: str, user_id: str, week: int | None = Query(None, ge=1, le
             {"slot": s.slot, "player": player_json(s.player), "new": bool(s.player and s.player.player_id in starting)}
             for s in advice.recommended
         ],
-        "bench": [player_json(p) for p in sorted(advice.bench, key=lambda p: p.adjusted, reverse=True)],
+        "bench": [player_json(p) for p in sorted(advice.bench, key=lambda p: p.projected, reverse=True)],
         "to_start": [player_json(p) for p in advice.to_start],
         "to_bench": [player_json(p) for p in advice.to_bench],
         "current_total": advice.current_total,
         "recommended_total": advice.recommended_total,
         "gain": advice.gain,
+        "team_range": team_range_json(advice.recommended_range),
+        "current_range": team_range_json(advice.current_range),
+        "market": market_json(ctx.week),
     }
 
 
@@ -155,6 +204,7 @@ def player_compare(
     return {
         "scoring": label,
         "week": start,
+        "market": market_json(start),
         "players": [
             {
                 "id": o.player_id,
@@ -168,8 +218,8 @@ def player_compare(
                 "this_week": o.this_week,
                 "key_stats": [{"key": k, "label": lbl} for k, lbl in players_mod.KEY_STATS.get(o.position, [])],
                 "weeks": [
-                    {"week": w.week, "opponent": w.opponent, "points": w.points, "raw": w.raw,
-                     "stats": w.stats, "bye": w.bye, "projected": w.projected}
+                    {"week": w.week, "opponent": w.opponent, "points": w.points,
+                     "stats": w.stats, "bye": w.bye, "projected": w.projected, "range": range_json(w.range)}
                     for w in o.weeks
                 ],
             }

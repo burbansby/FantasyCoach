@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent
 REQUIREMENTS = ROOT / "requirements.txt"
 # Separate folder per OS/Python version, since some packages ship compiled code.
 DEPS = ROOT / ".deps" / f"{platform.system().lower()}-{platform.machine().lower()}-py{sys.version_info[0]}{sys.version_info[1]}"
-MODULES = ["httpx", "typer", "rich", "fastapi", "uvicorn"]
+MODULES = ["httpx", "typer", "rich", "fastapi", "uvicorn", "numpy"]
 
 
 def missing_modules() -> list[str]:

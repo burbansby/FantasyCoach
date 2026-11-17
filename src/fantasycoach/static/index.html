@@ -130,6 +130,7 @@ input[type=text]:focus, select:focus, .btn:focus-visible { outline: 2px solid va
 }
 .rows .row:first-child { border-top: 0; }
 .row.new { background: linear-gradient(90deg, var(--accent-soft), transparent 60%); }
+.row.benched { background: linear-gradient(90deg, var(--danger-soft), transparent 60%); }
 .slot {
   font-size: 12px; font-weight: 700; color: var(--muted); background: var(--surface-2);
   border-radius: 8px; padding: 4px 0; text-align: center; letter-spacing: .02em;
@@ -144,10 +145,37 @@ input[type=text]:focus, select:focus, .btn:focus-visible { outline: 2px solid va
 .pmeta { color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .pts { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
 .pts small { display: block; font-weight: 500; color: var(--muted); font-size: 12px; }
+.pts .rng { display: block; font-weight: 500; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.rangebox { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.rb-head { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.rb-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; text-align: center; }
+.rb-nums b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+.rb-nums small { color: var(--muted); font-size: 11px; }
+.rbar { position: relative; height: 8px; border-radius: 8px; background: var(--border); margin: 10px 2px 2px; }
+.rbar .band { position: absolute; top: 0; bottom: 0; border-radius: 8px; background: var(--accent-soft); border: 1px solid var(--accent); }
+.rbar .mk { position: absolute; top: -3px; width: 2px; height: 14px; border-radius: 2px; transform: translateX(-1px); }
+.rbar .mk.exp { background: var(--accent); }
+.rbar .mk.slp { background: var(--muted); }
+.chip-mini { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; text-transform: none; letter-spacing: 0; }
+.chip-mini.dk { background: var(--accent-soft); color: var(--accent); }
+.chip-mini.model { background: var(--border); color: var(--muted); }
+.legend { color: var(--muted); font-size: 12px; margin-top: 10px; line-height: 1.5; }
+.team-range { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.tr-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; margin-bottom: 4px; }
+.tr-nums .label { display: block; font-size: 11px; }
+.tr-nums b { font-size: 22px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.tr-row { display: grid; grid-template-columns: 92px 1fr auto; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); }
+.tr-row em { font-style: normal; font-variant-numeric: tabular-nums; }
+.tr-row .rbar { margin: 8px 2px; }
+.muted-bar .band { background: var(--surface-2); border-color: var(--muted); }
+.muted-bar .mk.exp { background: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
 .badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
 .badge.q { background: var(--warn-soft); color: var(--warn); }
 .badge.o { background: var(--danger-soft); color: var(--danger); }
 .badge.up { background: var(--accent-soft); color: var(--accent); }
+.badge.down { background: var(--danger-soft); color: var(--danger); }
 .empty-slot { color: var(--danger); font-weight: 600; }
 .section-label { padding: 14px 16px 6px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; border-top: 1px solid var(--border); }
 .bench-row { opacity: .75; }
@@ -361,9 +389,20 @@ function playerCell(p) {
     <div class="pname">${esc(p.name)}</div><div class="pmeta">${meta(p)}</div></div></div>`;
 }
 
+function rangeText(r) {
+  return r ? `${fmt(r.floor)}–${fmt(r.ceiling)}` : "";
+}
+
 function pts(p) {
-  const adj = p.adjusted !== p.projected ? `<small>${fmt(p.projected)} raw</small>` : "";
-  return `<div class="pts">${fmt(p.adjusted)}${adj}</div>`;
+  const r = p.range ? `<span class="rng" title="Floor–ceiling: 90% of simulated games land in this range">${rangeText(p.range)}</span>` : "";
+  return `<div class="pts">${fmt(p.projected)}${r}</div>`;
+}
+
+function marketLegend(m) {
+  const base = "Small numbers under points are the floor–ceiling range: 90% of 4,000 simulated games score at least the floor and 90% score at most the ceiling.";
+  if (!m) return base + " Betting lines are only available for the current week.";
+  if (m.error) return base + " " + esc(m.error) + ".";
+  return base + ` This week: DraftKings lines for ${m.players} players across ${m.games} games (more appear closer to kickoff).`;
 }
 
 function loading(msg) {
@@ -373,6 +412,29 @@ function loading(msg) {
 function showError(el, msg) { el.textContent = msg; el.classList.toggle("hidden", !msg); }
 
 /* ---------- views ---------- */
+function teamRange(d) {
+  const r = d.team_range;
+  if (!r) return "";
+  const c = d.current_range;
+  const lo = Math.min(r.floor, c ? c.floor : r.floor), hi = Math.max(r.ceiling, c ? c.ceiling : r.ceiling);
+  const span = Math.max(hi - lo, 1), pad = span * 0.08;
+  const pct = (v) => `${(((v - lo + pad) / (span + 2 * pad)) * 100).toFixed(1)}%`;
+  const bar = (x, cls) => `<div class="rbar ${cls}" title="Floor ${fmt(x.floor)} · expected ${fmt(x.expected)} · ceiling ${fmt(x.ceiling)}">
+      <div class="band" style="left:${pct(x.floor)};width:calc(${pct(x.ceiling)} - ${pct(x.floor)})"></div>
+      <div class="mk exp" style="left:${pct(x.expected)}"></div></div>`;
+  const showCurrent = c && d.to_start.length;
+  return `<div class="team-range">
+    <div class="tr-nums">
+      <div><span class="label">Team floor</span><b>${fmt(r.floor)}</b></div>
+      <div><span class="label">Expected</span><b style="color:var(--accent)">${fmt(r.expected)}</b></div>
+      <div><span class="label">Team ceiling</span><b>${fmt(r.ceiling)}</b></div>
+    </div>
+    ${showCurrent ? `<div class="tr-row"><span>Recommended</span>${bar(r, "")}</div>
+      <div class="tr-row"><span>Current</span>${bar(c, "muted-bar")}<em>${fmt(c.floor)}–${fmt(c.ceiling)}</em></div>` : bar(r, "")}
+    <div class="muted" style="font-size:12px;margin-top:8px">95% of simulated weeks score above the floor and 95% stay below the ceiling.</div>
+  </div>`;
+}
+
 function renderLineup(d) {
   const summary = d.gain > 0
     ? `<div><div class="label">Projected points</div>
@@ -393,14 +455,19 @@ function renderLineup(d) {
     ? `<li class="row ${s.new ? "new" : ""}"><div class="slot">${esc(s.slot.replace("_FLEX", " FLX").replace("SUPER FLX", "SFLX"))}</div>
          <div style="min-width:0;display:flex;align-items:center;gap:8px">${playerCell(s.player)}${s.new ? '<span class="badge up">START</span>' : ""}</div>${pts(s.player)}</li>`
     : `<li class="row"><div class="slot">${esc(s.slot)}</div><div class="empty-slot">Empty — no eligible player</div><div></div></li>`).join("");
-  const bench = d.bench.map((p) =>
-    `<li class="row bench-row"><div class="slot">BN</div>${playerCell(p)}${pts(p)}</li>`).join("");
+  const benchedIds = new Set(d.to_bench.map((p) => p.id));
+  const bench = d.bench.map((p) => benchedIds.has(p.id)
+    ? `<li class="row benched"><div class="slot">BN</div>
+         <div style="min-width:0;display:flex;align-items:center;gap:8px">${playerCell(p)}<span class="badge down">BENCH</span></div>${pts(p)}</li>`
+    : `<li class="row bench-row"><div class="slot">BN</div>${playerCell(p)}${pts(p)}</li>`).join("");
 
   $("content").innerHTML = `
-    <div class="card pad summary">${summary}</div>
+    <div class="card pad summary" style="display:block">
+      <div class="summary" style="margin:0">${summary}</div>${teamRange(d)}</div>
     ${changes}
     <div class="card"><ul class="rows">${slots}</ul>
-      ${bench ? `<div class="section-label">Bench</div><ul class="rows">${bench}</ul>` : ""}</div>`;
+      ${bench ? `<div class="section-label">Bench</div><ul class="rows">${bench}</ul>` : ""}</div>
+    <div class="legend">Decisions use Sleeper projections. ${marketLegend(d.market)}</div>`;
 }
 
 function renderWaivers(d) {
@@ -504,13 +571,41 @@ async function loadPlayers(token) {
 function weekCell(w) {
   if (w.bye) return `<span class="muted">BYE</span>`;
   if (!w.projected) return `<span class="muted">—</span>`;
-  return `${fmt(w.points)}<span class="opp">vs ${esc(w.opponent)}</span>`;
+  const r = w.range ? `<span class="opp" title="Floor–ceiling">${rangeText(w.range)}</span>` : "";
+  return `${fmt(w.points)}<span class="opp">vs ${esc(w.opponent)}</span>${r}`;
 }
 
 function statLine(p, w) {
   if (!w || !w.projected || w.bye || !p.key_stats.length) return "";
   return `<div class="statline">${p.key_stats.map((k) =>
     `<span><b>${fmt(w.stats[k.key] ?? 0)}</b> ${esc(k.label)}</span>`).join("")}</div>`;
+}
+
+function rangeVerdict(ps) {
+  const withRange = ps.filter((p) => p.weeks[0]?.range);
+  if (withRange.length < 2) return "";
+  const safest = withRange.reduce((a, b) => (b.weeks[0].range.floor > a.weeks[0].range.floor ? b : a));
+  const upside = withRange.reduce((a, b) => (b.weeks[0].range.ceiling > a.weeks[0].range.ceiling ? b : a));
+  return `<div class="muted" style="font-size:13px;margin-top:2px">Safest floor: <b style="color:var(--text)">${esc(safest.name)}</b> (${fmt(safest.weeks[0].range.floor)})
+    · Highest ceiling: <b style="color:var(--text)">${esc(upside.name)}</b> (${fmt(upside.weeks[0].range.ceiling)})</div>`;
+}
+
+function rangeBox(p, w, scaleMax) {
+  const r = w?.range;
+  if (!r) return "";
+  const pct = (v) => `${Math.max(0, Math.min(100, (v / scaleMax) * 100)).toFixed(1)}%`;
+  const chip = r.market
+    ? `<span class="chip-mini dk" title="${r.lines.length ? "Centred on DraftKings lines: " + esc(r.lines.join(", ")) : ""}${r.team_points ? " · team implied " + fmt(r.team_points) + " pts" : ""}">DraftKings lines</span>`
+    : `<span class="chip-mini model">History model</span>`;
+  return `<div class="rangebox">
+    <div class="rb-head"><span>Outcome range</span>${chip}</div>
+    <div class="rb-nums"><div><b>${fmt(r.floor)}</b><small>Floor</small></div>
+      <div><b style="color:var(--accent)">${fmt(r.expected)}</b><small>Expected</small></div>
+      <div><b>${fmt(r.ceiling)}</b><small>Ceiling</small></div></div>
+    <div class="rbar" title="Floor ${fmt(r.floor)} · expected ${fmt(r.expected)} · ceiling ${fmt(r.ceiling)} · Sleeper ${fmt(w.points)}">
+      <div class="band" style="left:${pct(Math.max(r.floor, 0))};width:calc(${pct(r.ceiling)} - ${pct(Math.max(r.floor, 0))})"></div>
+      <div class="mk slp" style="left:${pct(w.points)}"></div><div class="mk exp" style="left:${pct(r.expected)}"></div></div>
+  </div>`;
 }
 
 function renderPlayers(d) {
@@ -528,10 +623,12 @@ function renderPlayers(d) {
       ? `<div class="card pad verdict" style="margin-bottom:14px">${avatar(top)}
           <div><div class="label muted" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Week ${d.week} pick</div>
           <div class="big" style="font-weight:750">Start ${esc(top.name)}</div>
-          <div class="muted">${fmt(top.this_week)} pts · <span class="gain">+${fmt(top.this_week - next.this_week)}</span> over ${esc(next.name)}</div></div></div>`
+          <div class="muted">${fmt(top.this_week)} pts · <span class="gain">+${fmt(top.this_week - next.this_week)}</span> over ${esc(next.name)}</div>
+          ${rangeVerdict(ps)}</div></div>`
       : `<div class="card pad" style="margin-bottom:14px">None of these players has a projection for week ${d.week}.</div>`;
   }
 
+  const scaleMax = Math.max(10, ...ps.map((p) => p.weeks[0]?.range?.ceiling || 0)) * 1.05;
   const cards = ps.map((p) => {
     const best = multi && p.this_week === bestThis && p.this_week > 0;
     const w0 = p.weeks[0];
@@ -541,6 +638,7 @@ function renderPlayers(d) {
       ${playerCell({ ...p, opponent: w0?.opponent })}
       <div class="big">${thisWeek}</div>
       <div class="sub"><span>Wk ${d.week}</span>${nWeeks > 1 ? `<span><b>${fmt(p.total)}</b> total</span><span><b>${fmt(p.average)}</b> avg</span>` : ""}</div>
+      ${rangeBox(p, w0, scaleMax)}
       ${statLine(p, w0)}</div>`;
   }).join("");
 
@@ -559,7 +657,10 @@ function renderPlayers(d) {
   }
 
   $("content").innerHTML = `${verdict}<div class="pcards">${cards}</div>${table}
-    <div class="muted" style="font-size:12px;margin-top:10px">Scoring: ${esc(d.scoring)}</div>`;
+    <div class="legend">Scoring: ${esc(d.scoring)}. Big number is Sleeper's projection; the outcome range is
+      simulated from betting lines (when posted) and how this player's past games compared with projections.
+      <i style="background:var(--accent)"></i>expected <i style="background:var(--muted)"></i>Sleeper on the bar.
+      ${marketLegend(d.market)}</div>`;
 }
 
 function renderPlayerChips() {
