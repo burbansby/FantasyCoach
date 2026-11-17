@@ -226,3 +226,39 @@ def player_compare(
             for o in outs
         ],
     }
+
+
+def _view_json(view) -> dict:
+    return {
+        "projected": view.projected,
+        "range": team_range_json(view.range),
+        "slots": [{"slot": s.slot, "player": player_json(s.player)} for s in view.slots],
+    }
+
+
+def _side_json(side) -> dict | None:
+    if side is None:
+        return None
+    return {
+        "team_name": side.team_name,
+        "owner": side.owner,
+        "avatar": side.avatar,
+        # Lineup as set (top-level, for simple clients) plus both views for the toggle.
+        **_view_json(side.current),
+        "views": {"current": _view_json(side.current), "optimal": _view_json(side.optimal)},
+    }
+
+
+@app.get("/api/matchup")
+def matchup(league_id: str, user_id: str, week: int | None = Query(None, ge=1, le=18)) -> dict:
+    m = service.matchup(client, league_id, user_id, week)
+    return {
+        "league": m.league,
+        "week": m.week,
+        "me": _side_json(m.me),
+        "opponent": _side_json(m.opponent),
+        "win_probability": m.win_probability,
+        # "my_view|their_view" -> chance you win, e.g. "optimal|current".
+        "win_probabilities": {f"{a}|{b}": p for (a, b), p in (m.win_probabilities or {}).items()},
+        "market": market_json(m.week),
+    }

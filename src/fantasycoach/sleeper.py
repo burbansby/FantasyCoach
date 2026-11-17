@@ -104,6 +104,10 @@ class SleeperClient:
     def league_users(self, league_id: str) -> list[dict]:
         return self._get(f"/v1/league/{league_id}/users")
 
+    def matchups(self, league_id: str, week: int) -> list[dict]:
+        """Each roster's matchup for a week: roster_id, matchup_id (shared by opponents), starters."""
+        return self._get(f"/v1/league/{league_id}/matchups/{week}", ttl=60) or []
+
     def players(self) -> dict[str, dict]:
         """All NFL players keyed by player_id (~5MB, cached for a day)."""
         return self._get("/v1/players/nfl", ttl=TTL_PLAYERS)

@@ -207,6 +207,21 @@ def simulate_points(
     return pts, used_lines
 
 
+def win_probability(samples_a: list[np.ndarray], samples_b: list[np.ndarray], sims: int = SIMS) -> float:
+    """Share of simulated weeks in which lineup A outscores lineup B (ties count half).
+
+    Team totals' deviations are shrunk by the average of the team calibration factors, the same
+    correction that makes team floors and ceilings match real outcomes.
+    """
+    k = (TEAM_LOW_SCALE + TEAM_HIGH_SCALE) / 2
+    totals = []
+    for samples in (samples_a, samples_b):
+        t = np.sum(samples, axis=0) if samples else np.zeros(sims)
+        totals.append(t.mean() + k * (t - t.mean()))
+    a, b = totals
+    return round(float(np.mean(a > b) + 0.5 * np.mean(a == b)), 4)
+
+
 def team_range(player_samples: list[np.ndarray], sims: int = SIMS) -> TeamRange:
     """Sum players' simulated games week by week and read off the team's 5th/95th percentiles."""
     total = np.zeros(sims)

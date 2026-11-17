@@ -37,8 +37,12 @@ def _status(p: Player) -> str:
     return f"[{color}]{p.injury_status}[/]"
 
 
+def _num(x: float) -> str:
+    return f"{0.0 if abs(x) < 0.05 else x:.1f}"  # avoid "-0.0"
+
+
 def _range(r) -> str:
-    return f"{r.floor:.1f}-{r.ceiling:.1f}" if r else ""
+    return f"{_num(r.floor)}-{_num(r.ceiling)}" if r else ""
 
 
 def _opp(p: Player) -> str:
@@ -164,6 +168,65 @@ def waivers(
         console.print(table)
     else:
         console.print("[green]No free agent projects better than your current players.[/]")
+
+
+@app.command()
+def matchup(
+    week: Optional[int] = typer.Option(None, "--week", "-w", help="NFL week (default: current)"),
+    league: Optional[str] = typer.Option(None, "--league", "-l"),
+    optimal: bool = typer.Option(False, "--optimal", help="Show your optimal lineup instead of the one you set"),
+    opp_optimal: bool = typer.Option(False, "--opp-optimal", help="Show your opponent's optimal lineup"),
+):
+    """Your matchup: both starting lineups with projections and floor-ceiling ranges."""
+    cfg, league_id = _require_config(league)
+    m = service.matchup(_client(), league_id, cfg.user_id, week)
+    my_view, their_view = ("optimal" if optimal else "current"), ("optimal" if opp_optimal else "current")
+    me = m.me.view(my_view)
+    them = m.opponent.view(their_view) if m.opponent else None
+    me_name = m.me.team_name + (" (optimal)" if optimal else "")
+    them_name = (m.opponent.team_name + (" (optimal)" if opp_optimal else "")) if m.opponent else ""
+
+    def cell(p) -> tuple[str, str]:
+        if p is None:
+            return "[red]EMPTY[/]", ""
+        return f"{p.label} {_status(p)}".strip(), f"{p.projected:.1f}\n[dim]{_range(p.range)}[/]"
+
+    title = f"{m.league} - Week {m.week}: {me_name}" + (f" vs {them_name}" if them else " (no opponent)")
+    table = Table(title=title)
+    table.add_column(me_name)
+    table.add_column("Proj", justify="right")
+    table.add_column("Slot", justify="center", style="dim")
+    if them:
+        table.add_column("Proj", justify="right")
+        table.add_column(them_name)
+    for i, s in enumerate(me.slots):
+        left, left_pts = cell(s.player)
+        if them:
+            opp = them.slots[i].player if i < len(them.slots) else None
+            right, right_pts = cell(opp)
+            mine_v = s.player.projected if s.player else None
+            opp_v = opp.projected if opp else None
+            # Subtle edge marker: colour the higher projection in each slot.
+            if mine_v is not None and (opp_v is None or mine_v > opp_v):
+                left_pts = "[green]" + left_pts.replace("\n", "[/]\n", 1)
+            elif opp_v is not None and (mine_v is None or opp_v > mine_v):
+                right_pts = "[yellow]" + right_pts.replace("\n", "[/]\n", 1)
+            table.add_row(left, left_pts, s.slot, right_pts, right)
+        else:
+            table.add_row(left, left_pts, s.slot)
+    table.add_section()
+    if them:
+        table.add_row("[bold]Total[/]", f"[bold]{me.projected:.1f}[/]", "", f"[bold]{them.projected:.1f}[/]", "[bold]Total[/]")
+    else:
+        table.add_row("[bold]Total[/]", f"[bold]{me.projected:.1f}[/]", "")
+    console.print(table)
+    for name, sd in [(me_name, me)] + ([(them_name, them)] if them else []):
+        if sd.range:
+            console.print(f"{name}: floor {sd.range.floor:.1f} - ceiling {sd.range.ceiling:.1f} "
+                          f"(expected {sd.range.expected:.1f})")
+    win = (m.win_probabilities or {}).get((my_view, their_view))
+    if win is not None:
+        console.print(f"Win probability: [bold]{win:.0%}[/] for {me_name}")
 
 
 @app.command()

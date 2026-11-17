@@ -8,6 +8,12 @@ roster settings and scoring rules, pulls weekly projections, and gives stats-dri
 - **Start/sit (`lineup`)** – builds the highest-projected legal lineup from your roster
   (handles FLEX, SUPER_FLEX, WR/RB and WR/TE flex, IDP), flags injuries and byes, and
   shows exactly which players to swap and the projected point gain.
+- **Matchup (`matchup`)** – your starting lineup and your opponent's side by side for the
+  week, slot by slot: each player's projection and floor–ceiling, both teams' projected
+  totals and team floor/ceiling, and a simulated win probability. Each side has a
+  Current / Optimal switch (optimal = best legal lineup from that team's roster, IR excluded)
+  and the totals, ranges and win probability follow both switches. No coaching advice, just
+  projections. CLI: `matchup --optimal` / `--opp-optimal`.
 - **Player lookup & compare (`players`)** – no sign-in needed. Search any player or team
   defense and see week-by-week projections, key stat lines, totals and averages; add
   several to compare side by side with a "start this one" pick for the week. Scored with
@@ -60,7 +66,7 @@ Use `python3 run.py web --host 0.0.0.0 --no-open` to reach it from other devices
 ## Web interface
 
 Enter your Sleeper username, pick a league, and switch between **Start / Sit**,
-**Waiver Wire** and **Players**. The **Players** tab works without signing in (use the
+**Matchup**, **Waiver Wire** and **Players**. The **Players** tab works without signing in (use the
 "look up players without signing in" link). Your username and league are remembered in the browser. JSON API docs
 are at `/api/docs`.
 
@@ -70,6 +76,7 @@ are at `/api/docs`.
 python3 run.py setup --username <your sleeper username>   # pick your default league
 python3 run.py lineup                                      # this week's start/sit
 python3 run.py lineup --week 12
+python3 run.py matchup                                     # you vs. your opponent this week
 python3 run.py waivers                                     # next 3 weeks
 python3 run.py waivers --position RB --weeks 5
 python3 run.py leagues                                     # list your leagues

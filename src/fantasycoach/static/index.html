@@ -169,6 +169,49 @@ input[type=text]:focus, select:focus, .btn:focus-visible { outline: 2px solid va
 .tr-row em { font-style: normal; font-variant-numeric: tabular-nums; }
 .tr-row .rbar { margin: 8px 2px; }
 .muted-bar .band { background: var(--surface-2); border-color: var(--muted); }
+.opp-bar .band { background: var(--warn-soft); border-color: var(--warn); }
+.opp-bar .mk.exp { background: var(--warn); }
+.seg { display: inline-flex; margin-top: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 2px; }
+.seg button { border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed=true] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.seg-note { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.mu-head { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: start; }
+.mu-team { min-width: 0; }
+.mu-team.right { text-align: right; }
+.mu-team.right .mu-name { flex-direction: row-reverse; }
+.mu-team.right .pmeta { justify-content: flex-end; }
+.mu-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mu-total { font-size: 32px; font-weight: 750; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 8px; }
+.mu-vs { align-self: center; color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 13px; }
+.mu-win { margin-top: 14px; }
+.mu-win-labels { display: flex; justify-content: space-between; align-items: baseline; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mu-win-labels .label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.mu-win-bar { height: 8px; border-radius: 8px; background: var(--warn); overflow: hidden; margin-top: 4px; }
+.mu-win-bar i { display: block; height: 100%; background: var(--accent); }
+.mu-row { position: relative; display: grid; grid-template-columns: 1fr 56px 1fr; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--border); }
+.mu-row.lead-me::before, .mu-row.lead-op::after {
+  content: ""; position: absolute; top: 12px; bottom: 12px; width: 3px; border-radius: 3px;
+}
+.mu-row.lead-me::before { left: 0; background: var(--accent); }
+.mu-row.lead-op::after { right: 0; background: var(--warn); }
+.mu-row.lead-me .mu-cell:first-child .pts { color: var(--accent); }
+.mu-row.lead-op .mu-cell.right .pts { color: var(--warn); }
+.rows .mu-row:first-child { border-top: 0; }
+.mu-cell { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.mu-cell.right { text-align: right; }
+.mu-cell.right .who-cell { flex-direction: row-reverse; }
+.mu-cell.right .pmeta { justify-content: flex-end; }
+.mu-cell.right .pts { text-align: left; }
+@media (max-width: 640px) {
+  .mu-row { grid-template-columns: 1fr 40px 1fr; gap: 6px; padding: 8px 8px; }
+  .mu-row .avatar { display: none; }
+  .mu-cell { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .mu-cell.right { flex-direction: column-reverse; align-items: flex-end; }
+  .mu-cell.right .pts { text-align: right; }
+  .mu-row .slot { font-size: 10px; }
+  .mu-total { font-size: 26px; }
+  .mu-head .avatar { width: 30px; height: 30px; }
+}
 .muted-bar .mk.exp { background: var(--muted); }
 .legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
 .badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
@@ -289,6 +332,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 2
     <div class="toolbar">
       <div class="tabs" role="tablist">
         <button class="tab" role="tab" data-tab="lineup" aria-selected="true">Start / Sit</button>
+        <button class="tab" role="tab" data-tab="matchup" aria-selected="false">Matchup</button>
         <button class="tab" role="tab" data-tab="waivers" aria-selected="false">Waiver Wire</button>
         <button class="tab" role="tab" data-tab="players" aria-selected="false">Players</button>
       </div>
@@ -348,7 +392,8 @@ const state = {
   horizon: 3,
   position: "",
   positions: [],
-  picked: store.get("players") || [],   // [{id, name, position, team, image}]
+  picked: store.get("players") || [],
+  muView: Object.assign({ me: "current", op: "current" }, store.get("muView") || {}),   // [{id, name, position, team, image}]
   scoring: store.get("scoring") || "",  // "" = auto (league if signed in, else Sleeper default)
   pWeeks: 4,
 };
@@ -435,6 +480,90 @@ function teamRange(d) {
   </div>`;
 }
 
+function teamAvatar(side) {
+  return side.avatar
+    ? `<div class="avatar"><img src="${esc(side.avatar)}" alt="" loading="lazy"></div>`
+    : `<div class="avatar">${esc(initials(side.team_name))}</div>`;
+}
+
+function muPlayer(slot, right) {
+  const p = slot?.player;
+  if (!p) return `<div class="mu-cell ${right ? "right" : ""}"><span class="empty-slot">Empty</span></div>`;
+  const ptsBlock = `<div class="pts">${fmt(p.projected)}${p.range ? `<span class="rng">${rangeText(p.range)}</span>` : ""}</div>`;
+  const who = `<div class="who-cell">${avatar(p)}<div style="min-width:0">
+      <div class="pname">${esc(p.name)}</div><div class="pmeta">${meta(p)}</div></div></div>`;
+  return `<div class="mu-cell ${right ? "right" : ""}">${right ? ptsBlock + who : who + ptsBlock}</div>`;
+}
+
+let lastMatchup = null;
+
+function sameLineup(sd) {
+  const ids = (v) => v.slots.map((s) => s.player?.id || "").sort().join(",");
+  return ids(sd.views.current) === ids(sd.views.optimal);
+}
+
+function viewToggle(sideKey, sd) {
+  const cur = state.muView[sideKey];
+  const btn = (v, label) => `<button data-side="${sideKey}" data-view="${v}" aria-pressed="${cur === v}">${label}</button>`;
+  const note = sameLineup(sd) ? `<div class="seg-note">Set lineup is already optimal</div>` : "";
+  return `<div class="seg" role="group" aria-label="${sideKey === "me" ? "Your" : "Opponent"} lineup view">${btn("current", "Current")}${btn("optimal", "Optimal")}</div>${note}`;
+}
+
+function renderMatchup(d) {
+  lastMatchup = d;
+  const pickView = (sd, key) => (sd && sd.views ? { ...sd, ...sd.views[state.muView[key]] } : sd);
+  const me = pickView(d.me, "me"), op = pickView(d.opponent, "op");
+  const sideHead = (sd, right) => `<div class="mu-team ${right ? "right" : ""}">
+      <div class="mu-name">${teamAvatar(sd)}<div style="min-width:0"><div class="pname">${esc(sd.team_name)}</div>
+        <div class="pmeta">${esc(sd.owner)}</div></div></div>
+      ${sd.views ? viewToggle(right ? "op" : "me", sd) : ""}
+      <div class="mu-total">${fmt(sd.projected)}</div>
+      ${sd.range ? `<div class="pmeta">Floor ${fmt(sd.range.floor)} · Ceiling ${fmt(sd.range.ceiling)}</div>` : ""}
+    </div>`;
+
+  let ranges = "";
+  if (me.range && op?.range) {
+    const lo = Math.min(me.range.floor, op.range.floor), hi = Math.max(me.range.ceiling, op.range.ceiling);
+    const span = Math.max(hi - lo, 1), pad = span * 0.08;
+    const pct = (v) => `${(((v - lo + pad) / (span + 2 * pad)) * 100).toFixed(1)}%`;
+    const bar = (r, cls) => `<div class="rbar ${cls}" title="Floor ${fmt(r.floor)} · expected ${fmt(r.expected)} · ceiling ${fmt(r.ceiling)}">
+        <div class="band" style="left:${pct(r.floor)};width:calc(${pct(r.ceiling)} - ${pct(r.floor)})"></div>
+        <div class="mk exp" style="left:${pct(r.expected)}"></div></div>`;
+    ranges = `<div class="team-range">
+      <div class="tr-row"><span>${esc(me.team_name)}</span>${bar(me.range, "")}<em>${fmt(me.range.expected)}</em></div>
+      <div class="tr-row"><span>${esc(op.team_name)}</span>${bar(op.range, "opp-bar")}<em>${fmt(op.range.expected)}</em></div>
+      <div class="muted" style="font-size:12px;margin-top:6px">Bars show each team's floor–ceiling (95% of simulated weeks land inside); tick = expected score.</div>
+    </div>`;
+  }
+
+  const win = d.win_probabilities?.[`${state.muView.me}|${state.muView.op}`] ?? d.win_probability;
+  const winBar = win == null ? "" : `<div class="mu-win">
+      <div class="mu-win-labels"><span>${Math.round(win * 100)}%</span><span class="label">Win probability</span><span>${Math.round((1 - win) * 100)}%</span></div>
+      <div class="mu-win-bar"><i style="width:${(win * 100).toFixed(1)}%"></i></div></div>`;
+
+  const head = op
+    ? `<div class="card pad"><div class="mu-head">${sideHead(me, false)}<div class="mu-vs">vs</div>${sideHead(op, true)}</div>${winBar}${ranges}</div>`
+    : `<div class="card pad"><div class="mu-head">${sideHead(me, false)}</div>
+        <div class="muted" style="margin-top:10px">No opponent this week (bye or outside the regular-season schedule).</div></div>`;
+
+  // Subtle per-slot edge: whoever projects higher in this slot.
+  const edge = (a, b) => {
+    const x = a?.player?.projected ?? null, y = b?.player?.projected ?? null;
+    if (x === null && y === null) return "";
+    if (y === null || (x !== null && x > y)) return "lead-me";
+    if (x === null || y > x) return "lead-op";
+    return "";
+  };
+  const rows = me.slots.map((s, i) => `<li class="mu-row ${op ? edge(s, op.slots[i]) : ""}">
+      ${muPlayer(s, false)}
+      <div class="slot">${esc(s.slot.replace("_FLEX", " FLX").replace("SUPER FLX", "SFLX"))}</div>
+      ${op ? muPlayer(op.slots[i], true) : "<div></div>"}</li>`).join("");
+
+  $("content").innerHTML = `${head}
+    <div class="card" style="margin-top:14px"><ul class="rows">${rows}</ul></div>
+    <div class="legend">Projections are Sleeper's, scored with your league's settings. A colored edge marks who projects higher in each slot. ${marketLegend(d.market)}</div>`;
+}
+
 function renderLineup(d) {
   const summary = d.gain > 0
     ? `<div><div class="label">Projected points</div>
@@ -511,7 +640,13 @@ async function load() {
   const q = new URLSearchParams({ league_id: state.leagueId, user_id: state.user.user_id });
   if (state.week) q.set("week", state.week);
   try {
-    if (state.tab === "lineup") {
+    if (state.tab === "matchup") {
+      loading("Loading your matchup…");
+      const d = await api(`/api/matchup?${q}`);
+      if (token !== loadToken) return;
+      setWeek(d.week);
+      renderMatchup(d);
+    } else if (state.tab === "lineup") {
       loading("Building your best lineup…");
       const d = await api(`/api/lineup?${q}`);
       if (token !== loadToken) return;
@@ -534,7 +669,7 @@ async function load() {
 }
 
 function renderSignedOut() {
-  const what = state.tab === "lineup" ? "start/sit advice" : "waiver recommendations";
+  const what = { lineup: "start/sit advice", matchup: "your weekly matchup", waivers: "waiver recommendations" }[state.tab];
   $("content").innerHTML = `<div class="card signed-out-cta">
     <h2>Connect your Sleeper league</h2>
     <p>Enter your Sleeper username to get ${what} for your roster.</p>
@@ -799,7 +934,15 @@ $("league-select").addEventListener("change", (e) => { state.leagueId = e.target
 $("switch-user").addEventListener("click", () => { store.del("league"); state.leagueId = null; showSetup(); });
 $("sign-in").addEventListener("click", showSetup);
 $("skip-setup").addEventListener("click", () => { state.tab = "players"; showMain(); });
-$("content").addEventListener("click", (e) => { if (e.target.closest("[data-action=sign-in]")) showSetup(); });
+$("content").addEventListener("click", (e) => {
+  if (e.target.closest("[data-action=sign-in]")) return showSetup();
+  const seg = e.target.closest(".seg button");
+  if (seg && lastMatchup) {
+    state.muView[seg.dataset.side] = seg.dataset.view;
+    store.set("muView", state.muView);
+    renderMatchup(lastMatchup);
+  }
+});
 $("scoring").addEventListener("change", (e) => { state.scoring = e.target.value; store.set("scoring", state.scoring); load(); });
 $("p-weeks").addEventListener("change", (e) => { state.pWeeks = +e.target.value; load(); });
 $("pchips").addEventListener("click", (e) => {
