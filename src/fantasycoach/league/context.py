@@ -1,17 +1,23 @@
-"""Assemble everything needed to give advice for one team in one league."""
+"""League context: everything about one team in one league for a given week.
+
+``LeagueContext.load`` fetches the league (roster slots and scoring), your roster, which
+players are rostered league-wide, and the player list. It then builds ``Player`` objects
+with projections scored by the league's own rules for the lineup, waiver and matchup code.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .lineup import NON_STARTER_SLOTS, SLOT_ELIGIBILITY
-from .models import Player
-from .scoring import score
-from .sleeper import SleeperClient, SleeperError
+from fantasycoach.league.lineup import NON_STARTER_SLOTS, SLOT_ELIGIBILITY
+from fantasycoach.core.models import Player, display_name
+from fantasycoach.core.scoring import score
+from fantasycoach.sources.sleeper import SleeperClient, SleeperError, current_season_week
 
 
 @dataclass
 class LeagueContext:
+    """One team in one league for one week (build it with ``load``)."""
     league: dict
     season: str
     week: int
@@ -22,19 +28,22 @@ class LeagueContext:
 
     @property
     def scoring(self) -> dict[str, float]:
+        """The league's scoring settings (stat key to points)."""
         return self.league.get("scoring_settings") or {}
 
     @property
     def starter_slots(self) -> list[str]:
+        """Starting slots in order, for example ['QB', 'RB', 'RB', 'WR', 'FLEX']."""
         return [s for s in self.league.get("roster_positions", []) if s not in NON_STARTER_SLOTS]
 
     @classmethod
     def load(cls, client: SleeperClient, league_id: str, user_id: str, week: int | None = None) -> "LeagueContext":
+        """Fetch the league, rosters and players and find the roster ``user_id`` owns or co-owns."""
         league = client.league(league_id)
-        state = client.state()
-        season = league.get("season") or state["season"]
+        current_season, current_week = current_season_week(client)
+        season = league.get("season") or current_season
         if week is None:
-            week = int(state.get("week") or 1)
+            week = current_week
 
         rosters = client.rosters(league_id)
         mine = next((r for r in rosters if r.get("owner_id") == user_id), None)
@@ -64,14 +73,14 @@ class LeagueContext:
     # --- player construction ------------------------------------------------------
 
     def projections_by_id(self, client: SleeperClient, week: int) -> dict[str, dict]:
+        """Projections for ``week`` at this league's positions, keyed by player id."""
         rows = client.projections(self.season, week, self.positions)
         return {row["player_id"]: row for row in rows if row.get("player_id")}
 
     def build_player(self, player_id: str, projection: dict | None) -> Player:
+        """A ``Player`` with this league's scoring and positions applied."""
         info = self.players_db.get(player_id) or (projection or {}).get("player") or {}
-        name = info.get("full_name") or " ".join(
-            p for p in (info.get("first_name"), info.get("last_name")) if p
-        ) or player_id
+        name = display_name(info) or player_id
         position = info.get("position") or "?"
         eligible = [p for p in (info.get("fantasy_positions") or [position]) if p]
         # Prefer a position this league actually uses (e.g. a DB/WR two-way player counts as WR,
@@ -101,9 +110,11 @@ class LeagueContext:
         return totals
 
     def my_players(self, projections: dict[str, dict]) -> list[Player]:
+        """Every player on your roster, bench included."""
         return [self.build_player(pid, projections.get(pid)) for pid in self.my_roster.get("players") or []]
 
     def free_agents(self, projections: dict[str, dict]) -> list[Player]:
+        """Projected players on no roster in the league, at positions the league uses."""
         players = [
             self.build_player(pid, row)
             for pid, row in projections.items()

@@ -1,4 +1,17 @@
-"""Ties together history (spreads), the live betting market and the simulator."""
+"""Projection engine: turns "these players, this week" into outcome ranges.
+
+For a week it gathers what the simulator needs (Sleeper projections, learned spreads from
+``history``, DraftKings lines and Vegas team totals from ``sources.espn``, the weekly line
+calibration and touchdown scaling) and runs ``simulation`` for:
+
+- single players (``week_ranges``): floor / expected / ceiling
+- whole lineups (``lineup_range``): team floor / ceiling
+- head-to-head matchups (``matchup_scenarios``): both teams' ranges and the win
+  probability for every current/optimal pairing
+
+Betting lines exist only for the current week; other weeks use history and Sleeper alone.
+``engine_for`` returns one shared engine per Sleeper client so learned spreads are reused.
+"""
 
 from __future__ import annotations
 
@@ -8,19 +21,18 @@ import zlib
 
 import numpy as np
 
-from . import ranges
-from .config import cache_dir
-from .history import HistoryStore, Spread
-from .market import Market, MarketFetcher
-from .sleeper import SleeperClient
+from fantasycoach.projections import simulation
+from fantasycoach.core.config import cache_dir
+from fantasycoach.projections.history import HistoryStore, Spread
+from fantasycoach.sources.espn import Market, MarketFetcher
+from fantasycoach.core.models import FANTASY_POSITIONS, fantasy_position
+from fantasycoach.sources.sleeper import SleeperClient
 
 log = logging.getLogger(__name__)
 
-FANTASY_POSITIONS = ["DEF", "K", "QB", "RB", "TE", "WR"]
-_SKILL = {"QB", "RB", "WR", "TE", "K", "DEF"}
-
 
 class RangeEngine:
+    """Computes ranges for any week, caching learned spreads and sharing the client's HTTP cache."""
     def __init__(self, client: SleeperClient):
         self.client = client
         self.history = HistoryStore(client, cache_dir() / "history" if getattr(client, "cache_dir", None) else None)
@@ -29,6 +41,7 @@ class RangeEngine:
         self._lock = threading.Lock()
 
     def spread(self, season: int, week: int) -> Spread:
+        """Learned outcome spreads for ``week``; computed once, falls back to defaults offline."""
         key = (season, week)
         with self._lock:
             if key not in self._spreads:
@@ -40,6 +53,7 @@ class RangeEngine:
             return self._spreads[key]
 
     def current_market(self, season: str, week: int) -> Market:
+        """Live betting lines and team totals for ``week`` (cached about 30 minutes)."""
         return self.market.week_market(season, week)
 
     def _inputs(
@@ -52,12 +66,12 @@ class RangeEngine:
         spread = self.spread(int(season), current_week)
         rows = {r.get("player_id"): r for r in self.client.projections(season, week, FANTASY_POSITIONS)}
         market = self.current_market(season, week) if week == current_week else Market(week=week)
-        scales = ranges.team_td_scales(list(rows.values()), market.team_points) if market.team_points else {}
+        scales = simulation.team_td_scales(list(rows.values()), market.team_points) if market.team_points else {}
         db = self.client.players()
-        calibration = ranges.line_calibration(
+        calibration = simulation.line_calibration(
             market.lines,
             {pid: (rows.get(pid) or {}).get("stats") or {} for pid in market.lines},
-            {pid: _fantasy_position(db.get(pid) or {}) for pid in market.lines},
+            {pid: fantasy_position(db.get(pid) or {}) for pid in market.lines},
         ) if market.lines else {}
 
         out = []
@@ -66,7 +80,7 @@ class RangeEngine:
             if not row or not row.get("opponent"):
                 continue  # bye week or no projection
             info = db.get(pid) or row.get("player") or {}
-            position = _fantasy_position(info)
+            position = fantasy_position(info)
             if position is None:
                 continue
             team = row.get("team") or info.get("team")
@@ -94,10 +108,10 @@ class RangeEngine:
         current_week: int,
         player_ids: list[str],
         scoring: dict[str, float],
-    ) -> dict[str, ranges.Range]:
+    ) -> dict[str, simulation.Range]:
         """Expected/floor/ceiling (10th/90th percentile) for each player who has a game in ``week``."""
         return {
-            pid: ranges.simulate(team_points=team_points, **kwargs)
+            pid: simulation.simulate(team_points=team_points, **kwargs)
             for pid, _, _, team_points, kwargs in self._inputs(season, week, current_week, player_ids, scoring)
         }
 
@@ -108,7 +122,7 @@ class RangeEngine:
         current_week: int,
         player_ids: list[str],
         scoring: dict[str, float],
-    ) -> ranges.TeamRange:
+    ) -> simulation.TeamRange:
         """Whole-lineup expected score with a 5th-95th percentile floor and ceiling.
 
         Players are simulated game by game and summed within each simulated week, so the team
@@ -116,26 +130,7 @@ class RangeEngine:
         part of their game-script factor.
         """
         samples = self._lineup_samples(season, week, current_week, player_ids, scoring, {})
-        return ranges.team_range(samples)
-
-    def matchup_ranges(
-        self,
-        season: str,
-        week: int,
-        current_week: int,
-        player_ids_a: list[str],
-        player_ids_b: list[str],
-        scoring: dict[str, float],
-    ) -> tuple[ranges.TeamRange, ranges.TeamRange, float]:
-        """Team ranges for two opposing lineups plus the probability that lineup A outscores B.
-
-        Both lineups are simulated over the same simulated weeks, sharing NFL-team game factors,
-        so players from the same NFL team on opposite sides move together.
-        """
-        shared: dict[str, np.ndarray] = {}
-        a = self._lineup_samples(season, week, current_week, player_ids_a, scoring, shared)
-        b = self._lineup_samples(season, week, current_week, player_ids_b, scoring, shared)
-        return ranges.team_range(a), ranges.team_range(b), ranges.win_probability(a, b)
+        return simulation.team_range(samples)
 
     def matchup_scenarios(
         self,
@@ -145,7 +140,7 @@ class RangeEngine:
         mine: dict[str, list[str]],
         theirs: dict[str, list[str]],
         scoring: dict[str, float],
-    ) -> tuple[dict[str, ranges.TeamRange], dict[str, ranges.TeamRange], dict[tuple[str, str], float]]:
+    ) -> tuple[dict[str, simulation.TeamRange], dict[str, simulation.TeamRange], dict[tuple[str, str], float]]:
         """Team ranges for several versions of each lineup (e.g. "current"/"optimal") and the win
         probability for every pairing, keyed (my_version, their_version).
 
@@ -156,11 +151,12 @@ class RangeEngine:
         per = self._player_samples(season, week, current_week, union, scoring, {})
 
         def pick(ids: list[str]) -> list[np.ndarray]:
+            """Simulated samples for a lineup's players (players without a game are skipped)."""
             return [per[pid] for pid in ids if pid in per]
 
-        my_ranges = {k: ranges.team_range(pick(v)) for k, v in mine.items()}
-        their_ranges = {k: ranges.team_range(pick(v)) for k, v in theirs.items()}
-        wins = {(a, b): ranges.win_probability(pick(mine[a]), pick(theirs[b])) for a in mine for b in theirs}
+        my_ranges = {k: simulation.team_range(pick(v)) for k, v in mine.items()}
+        their_ranges = {k: simulation.team_range(pick(v)) for k, v in theirs.items()}
+        wins = {(a, b): simulation.win_probability(pick(mine[a]), pick(theirs[b])) for a in mine for b in theirs}
         return my_ranges, their_ranges, wins
 
     def _lineup_samples(
@@ -189,9 +185,9 @@ class RangeEngine:
             if team and position != "DEF":
                 if team not in shared:
                     seed = zlib.crc32(f"{season}|{week}|{team}".encode())
-                    shared[team] = np.random.default_rng(seed).standard_normal(ranges.SIMS)
+                    shared[team] = np.random.default_rng(seed).standard_normal(simulation.SIMS)
                 z = shared[team]
-            out[pid], _ = ranges.simulate_points(shared_z=z, **kwargs)
+            out[pid], _ = simulation.simulate_points(shared_z=z, **kwargs)
         return out
 
     def warm(self, season: str, week: int) -> None:
@@ -203,20 +199,11 @@ class RangeEngine:
             log.warning("Warm-up failed: %s", exc)
 
 
-def _fantasy_position(info: dict) -> str | None:
-    pos = info.get("position")
-    if pos in _SKILL:
-        return pos
-    for p in info.get("fantasy_positions") or []:
-        if p in _SKILL:
-            return p
-    return None
-
-
 _engines: dict[int, RangeEngine] = {}
 
 
 def engine_for(client: SleeperClient) -> RangeEngine:
+    """The shared engine for a Sleeper client, created on first use."""
     eng = _engines.get(id(client))
     if eng is None or eng.client is not client:
         eng = _engines[id(client)] = RangeEngine(client)

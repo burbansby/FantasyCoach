@@ -1,14 +1,19 @@
-"""Waiver wire: rank free agents by how much they'd upgrade your roster."""
+"""Waiver-wire logic: rank free agents by how much they'd upgrade your roster.
+
+Pure function (no network). Each free agent is compared with your weakest player at the
+same position over a multi-week horizon, and picks are sorted by net projected gain.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .models import Player
+from fantasycoach.core.models import Player
 
 
 @dataclass
 class WaiverPick:
+    """A suggested add/drop pair with projected values over the horizon."""
     add: Player
     add_value: float  # projected points over the horizon
     drop: Player | None
@@ -17,6 +22,7 @@ class WaiverPick:
 
     @property
     def gain(self) -> float:
+        """Projected points gained over the horizon by making this move."""
         return round(self.add_value - self.drop_value, 2)
 
 

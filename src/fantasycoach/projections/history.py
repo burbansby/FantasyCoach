@@ -18,9 +18,8 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .sleeper import SleeperClient
-
-POSITIONS = ["DEF", "K", "QB", "RB", "TE", "WR"]
+from fantasycoach.core.models import FANTASY_POSITIONS as POSITIONS
+from fantasycoach.sources.sleeper import SleeperClient
 
 # Volume stats modelled as log-normal around their centre: stat -> (offset c, min projection to count)
 VOLUME_STATS: dict[str, tuple[float, float]] = {
@@ -51,10 +50,12 @@ class Spread:
     weeks_used: int = 0
 
     def median_log_ratio(self, position: str, stat: str, sigma: float) -> float:
+        """How a median game compares with the projected mean for a stat, on a log scale."""
         value = self.position_median.get(position, {}).get(stat)
         return value if value is not None else -(sigma**2) / 2  # log-normal identity
 
     def sigma(self, player_id: str, position: str, stat: str) -> float:
+        """Outcome spread for a player's stat: their own (shrunk) value, else their position's."""
         own = self.player_sigma.get(player_id, {}).get(stat)
         if own is not None:
             return own
@@ -75,6 +76,7 @@ def _week_sequence(season: int, week: int, count: int) -> list[tuple[int, int]]:
 
 
 class HistoryStore:
+    """Downloads, condenses and caches completed weeks, and learns a ``Spread`` from them."""
     def __init__(self, client: SleeperClient, folder: Path | None):
         self.client = client
         self.folder = folder

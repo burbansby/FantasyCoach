@@ -1,7 +1,10 @@
-from fantasycoach.lineup import advise, optimize
-from fantasycoach.models import Player
-from fantasycoach.scoring import score
-from fantasycoach.waivers import recommend
+"""Tests for league logic: scoring, lineup optimisation, waiver picks and league context."""
+
+from fantasycoach.core.models import Player
+from fantasycoach.core.scoring import score
+from fantasycoach.league.context import LeagueContext
+from fantasycoach.league.lineup import advise, optimize
+from fantasycoach.league.waivers import recommend
 
 
 def P(pid, pos, pts, status=None, eligible=None):
@@ -59,7 +62,6 @@ def test_waivers_pairs_with_weakest_same_position_and_skips_protected():
 
 
 def test_league_projection_ignores_injury_status():
-    from fantasycoach.league import LeagueContext
     ctx = LeagueContext({}, "2026", 11, {}, set(), ["RB"],
                         {"1": {"full_name": "Hurt Guy", "position": "RB", "injury_status": "IR"}})
     p = ctx.build_player("1", {"stats": {"pts_ppr": 12.5}, "opponent": "DAL"})
@@ -72,7 +74,6 @@ def test_score_tolerates_null_stats():
 
 
 def test_two_way_player_maps_to_league_position():
-    from fantasycoach.league import LeagueContext
     ctx = LeagueContext({"roster_positions": ["WR", "RB"]}, "2026", 11, {}, set(), ["RB", "WR"],
                         {"1": {"full_name": "Two Way", "position": "DB", "fantasy_positions": ["DB", "WR"]},
                          "2": {"full_name": "Pure DB", "position": "DB", "fantasy_positions": ["DB"]}})

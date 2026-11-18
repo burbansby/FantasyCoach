@@ -82,7 +82,7 @@ def main() -> None:
         run_tests(sys.argv[2:])
         return
 
-    from fantasycoach.cli import main as cli_main
+    from fantasycoach.interface.cli import main as cli_main
 
     if len(sys.argv) == 1:
         sys.argv.append("web")

@@ -1,6 +1,11 @@
+"""Tests for player lookup and comparison: name search, scoring choice, outlooks and the player API."""
+
 from fastapi.testclient import TestClient
 
-from fantasycoach import players, service, web
+from fantasycoach.core.models import normalize
+from fantasycoach.interface import web
+from fantasycoach.players import compare
+from fantasycoach.players import lookup as players
 
 DB = {
     "1": {"full_name": "Jonathan Taylor", "first_name": "Jonathan", "last_name": "Taylor",
@@ -51,16 +56,16 @@ def test_search_prefers_relevant_active_players():
 
 def test_default_scoring_without_league_and_league_scoring_with_one():
     c = FakeClient()
-    label, rules = service.resolve_scoring(c, None, None)
+    label, rules = compare.resolve_scoring(c, None, None)
     assert label.startswith("Sleeper default") and rules["rec"] == 1
-    assert service.resolve_scoring(c, "half", None)[1]["rec"] == 0.5
-    assert service.resolve_scoring(c, None, "L1")[0] == "My League"
-    assert service.resolve_scoring(c, "std", "L1")[1]["rec"] == 0  # explicit preset wins over league
+    assert compare.resolve_scoring(c, "half", None)[1]["rec"] == 0.5
+    assert compare.resolve_scoring(c, None, "L1")[0] == "My League"
+    assert compare.resolve_scoring(c, "std", "L1")[1]["rec"] == 0  # explicit preset wins over league
     assert c.league_calls == 1
 
 
 def test_outlooks_week_by_week_with_bye():
-    label, start, outs = service.compare_players(FakeClient(), ["1", "3"], weeks=2)
+    label, start, outs = compare.compare_players(FakeClient(), ["1", "3"], weeks=2)
     jt, ars = outs
     assert start == 11
     assert jt.weeks[0].points == 9 + 6 + 2 + 1  # PPR default
@@ -70,7 +75,7 @@ def test_outlooks_week_by_week_with_bye():
 
 
 def test_player_without_projection_is_not_a_bye():
-    _, _, outs = service.compare_players(FakeClient(), ["2"], weeks=1)
+    _, _, outs = compare.compare_players(FakeClient(), ["2"], weeks=1)
     assert not outs[0].weeks[0].projected and not outs[0].weeks[0].bye
 
 
@@ -92,6 +97,19 @@ def test_outlook_uses_projection_even_when_listed_out():
     db["1"] = {**DB["1"], "injury_status": "Out"}
     c = FakeClient()
     c.players = lambda: db
-    _, _, outs = service.compare_players(c, ["1"], weeks=1)
+    _, _, outs = compare.compare_players(c, ["1"], weeks=1)
     assert outs[0].injury_status == "Out"
     assert outs[0].weeks[0].points == 18
+
+
+def test_normalize_strips_punctuation_and_suffixes():
+    assert normalize("A.J. Brown Jr.") == "ajbrown"
+    assert normalize("Marvin Harrison II") == "marvinharrison"
+    assert normalize("Amon-Ra St. Brown") == "amonrastbrown"
+    assert normalize("Ivan Smith") == "ivansmith"  # "iv" inside a word is not a suffix
+
+
+def test_search_finds_two_way_players_by_fantasy_position():
+    db = {"th": {"full_name": "Travis Hunter", "first_name": "Travis", "last_name": "Hunter",
+                 "position": "DB", "fantasy_positions": ["DB", "WR"], "team": "JAX", "search_rank": 50}}
+    assert [pid for pid, _ in players.search(db, "hunter")] == ["th"]

@@ -1,107 +1,138 @@
 # FantasyCoach
 
-A command-line fantasy football assistant for **Sleeper** leagues. It reads your league's
-roster settings and scoring rules, pulls weekly projections, and gives stats-driven advice.
+A fantasy football assistant for **Sleeper** leagues, with a web app and a command line.
+It reads your league's roster settings and scoring rules, pulls weekly projections and live
+betting lines, and shows lineup advice, matchups, waiver targets and player comparisons.
 
-## Features
+## Quick start
 
-- **Start/sit (`lineup`)** – builds the highest-projected legal lineup from your roster
-  (handles FLEX, SUPER_FLEX, WR/RB and WR/TE flex, IDP), flags injuries and byes, and
-  shows exactly which players to swap and the projected point gain.
-- **Matchup (`matchup`)** – your starting lineup and your opponent's side by side for the
-  week, slot by slot: each player's projection and floor–ceiling, both teams' projected
-  totals and team floor/ceiling, and a simulated win probability. Each side has a
-  Current / Optimal switch (optimal = best legal lineup from that team's roster, IR excluded)
-  and the totals, ranges and win probability follow both switches. No coaching advice, just
-  projections. CLI: `matchup --optimal` / `--opp-optimal`.
-- **Player lookup & compare (`players`)** – no sign-in needed. Search any player or team
-  defense and see week-by-week projections, key stat lines, totals and averages; add
-  several to compare side by side with a "start this one" pick for the week. Scored with
-  your league's settings when signed in, otherwise Sleeper's default (PPR), with Half PPR
-  and Standard also available.
-- **Outcome ranges (floor / expected / ceiling)** – shown next to Sleeper's projection on
-  the lineup and in player lookup. Each player's game is simulated 4,000 times:
-  - the centre of each stat comes from **live DraftKings prop lines** (via ESPN's public odds
-    feed, no key or quota) when posted, otherwise Sleeper's projection; lines are calibrated
-    each week against Sleeper so they shift players relative to each other without biasing
-    the overall level;
-  - touchdown rates scale with each team's **Vegas implied total** (from spread + over/under);
-  - the spread comes from how far the player's past games landed from projections (Sleeper
-    history, shrunk toward their position), with stats correlated within a game.
-  Floor = 10th percentile, ceiling = 90th percentile. In a backtest over 2026 weeks 3–10
-  (1,904 player-games, spreads learned only from earlier weeks) 10.8% of games fell below the
-  floor and 8.4% above the ceiling. Sleeper's projection still drives start/sit and waiver
-  decisions.
-- **Team floor / ceiling** – the start/sit page shows the whole lineup's range (recommended
-  vs current). Players are simulated together and summed week by week (teammates on the same
-  NFL team are correlated), giving a floor the team beats in 95% of weeks and a ceiling it
-  stays under in 95%. Backtest on 2,400 random lineups from 2026 weeks 3–10: 4.8% fell below
-  the floor and 5.0% above the ceiling.
-- **Waiver wire (`waivers`)** – ranks free agents by projected points over the next N weeks
-  and pairs each with your weakest same-position player as the drop, sorted by net gain.
-
-Projections are scored with **your league's** `scoring_settings`, so PPR, half-PPR, TE
-premium, 6-pt passing TDs, etc. are all respected. Injury designations are shown as badges
-but never change a projection (official reports lag), so you always see Sleeper's actual
-projected points.
-
-## Quick start (no virtual environment)
-
-You only need Python 3.10+. From the project folder:
+You only need Python 3.10+ (no virtual environment). From the project folder:
 
 ```bash
 python3 run.py
 ```
 
-That's it: the first run installs the needed packages into a local `.deps/` folder
-(nothing system-wide), then starts the web app at http://localhost:8000 and opens your
-browser. On Windows use `python run.py`.
+The first run installs the required packages into a local `.deps/` folder (nothing
+system-wide), then starts the web app at http://localhost:8000 and opens your browser.
+On Windows use `python run.py`. If Ubuntu says pip is missing, run
+`sudo apt install python3-pip` and try again.
 
-If Ubuntu says pip is missing: `sudo apt install python3-pip`, then run it again.
+To use it from another device (e.g. your phone) on the same network:
 
-`run.py` also runs any command-line command, e.g. `python3 run.py lineup`.
-Use `python3 run.py web --host 0.0.0.0 --no-open` to reach it from other devices
-(e.g. your phone) at `http://<this machine's IP>:8000`.
+```bash
+python3 run.py web --host 0.0.0.0 --no-open
+```
 
-## Web interface
+then browse to `http://<this machine's IP>:8000`.
 
-Enter your Sleeper username, pick a league, and switch between **Start / Sit**,
-**Matchup**, **Waiver Wire** and **Players**. The **Players** tab works without signing in (use the
-"look up players without signing in" link). Your username and league are remembered in the browser. JSON API docs
-are at `/api/docs`.
+## What it does
+
+Enter your Sleeper username and pick a league. The **Players** tab also works without
+signing in.
+
+- **Start / Sit** – the highest-projected legal lineup from your roster (FLEX, SUPER_FLEX,
+  WR/RB and WR/TE flex, IDP), with green START / red BENCH tags for each change, the
+  projected point gain, and your team's floor and ceiling (recommended vs current lineup).
+- **Matchup** – your lineup and your opponent's side by side, slot by slot, ordered best to
+  worst within each position. Shows each player's projection and range, both teams' totals
+  and floor/ceiling, and a win probability. A Current / Optimal switch on each side swaps in
+  that team's best possible lineup and updates everything at the top. Projections only, no
+  advice.
+- **Waiver Wire** – free agents ranked by projected points over the next 1–8 weeks, each
+  paired with your weakest same-position player as the drop.
+- **Players** – search any player or team defense: week-by-week projections, key stat
+  lines, floor/expected/ceiling, and side-by-side comparison with a pick for the week plus
+  the safest floor and highest ceiling. Uses your league's scoring when signed in,
+  otherwise Sleeper's default (PPR), with Half PPR and Standard available.
+
+Projections are Sleeper's, scored with **your league's** `scoring_settings` (PPR, TE premium,
+6-pt passing TDs, etc.), and they drive every recommendation. Injury designations are shown
+as badges but never change a projection, because official reports lag.
+
+## Floors, ceilings and win probability
+
+Next to each projection the app shows an outcome range from 4,000 simulated games:
+
+- **Centre of each stat:** live **DraftKings prop lines** (via ESPN's public odds feed, no key
+  or quota) when posted, otherwise Sleeper's projection. Each week the lines are calibrated
+  against Sleeper, so they shift players relative to each other without biasing the overall
+  level. Props for every game are usually posted by the weekend.
+- **Touchdowns:** scaled by each team's Vegas implied total (from the spread and over/under).
+- **Spread:** how far the player's past games landed from their projections (about 20 weeks of
+  Sleeper history, shrunk toward their position), with a player's stats correlated within a
+  game.
+
+| Range | Meaning | Backtest (2026 weeks 3–10, out of sample) |
+|---|---|---|
+| Player floor / ceiling | 10th / 90th percentile | 10.8% below, 8.4% above (1,904 player-games) |
+| Team floor / ceiling | 5th / 95th percentile of the summed lineup | 4.8% below, 5.0% above (2,400 lineups) |
+
+The backtests run without betting lines (past props aren't archived). Team totals are
+simulated player by player and summed within each simulated week, with teammates from the
+same NFL team correlated. Win probability compares both lineups over the same simulated
+weeks; it hasn't been backtested against real head-to-head results.
 
 ## Command line
+
+Every web feature is also a command (prefix with `python3 run.py`):
 
 ```bash
 python3 run.py setup --username <your sleeper username>   # pick your default league
 python3 run.py lineup                                      # this week's start/sit
 python3 run.py lineup --week 12
-python3 run.py matchup                                     # you vs. your opponent this week
-python3 run.py waivers                                     # next 3 weeks
+python3 run.py matchup                                     # you vs. your opponent
+python3 run.py matchup --optimal --opp-optimal             # both teams' best lineups
 python3 run.py waivers --position RB --weeks 5
-python3 run.py leagues                                     # list your leagues
 python3 run.py players "Bijan Robinson" Gibbs Chiefs       # compare (no setup needed)
 python3 run.py players Kelce --weeks 6 --scoring half
+python3 run.py leagues                                     # list your leagues
 ```
 
-Any command accepts `--league <id>` to target a league other than your default.
-
-Config and an HTTP cache live in `~/.fantasycoach` (override with `FANTASYCOACH_HOME`).
+League commands accept `--league <id>` to use a league other than your default. Config and
+caches live in `~/.fantasycoach` (override with `FANTASYCOACH_HOME`). The first run that
+needs history downloads about 20 weeks of Sleeper data (roughly 3 MB per week) and keeps a
+small condensed copy; the web app loads it in the background at startup.
 
 ## Data sources
 
-- Sleeper public API (`api.sleeper.app/v1`) for users, leagues, rosters, and players.
-- Sleeper's undocumented projections and stats endpoints (`api.sleeper.app/projections/...`,
-  `/stats/...`). They're what the Sleeper app uses but aren't officially supported.
-- ESPN's public odds feed (`site.api.espn.com`, `sports.core.api.espn.com`) for DraftKings
+- Sleeper public API (`api.sleeper.app/v1`): users, leagues, rosters, matchups, players.
+- Sleeper's undocumented projections and stats endpoints (`/projections/...`, `/stats/...`),
+  which the Sleeper app itself uses but aren't officially supported.
+- ESPN's public odds feed (`site.api.espn.com`, `sports.core.api.espn.com`): DraftKings
   game lines and player prop lines. Unofficial; if it's unavailable, ranges fall back to the
-  history-only model. Props are usually posted for every game by the weekend.
+  history-only model.
 
 ## Development
 
 Run the tests with `python3 run.py test` (installs pytest into `.deps/` on first use).
+JSON API docs are served at `/api/docs`.
 
-Layout: `sleeper.py` (API client + cache) → `league.py` (league/roster context) →
-`scoring.py`, `lineup.py`, `waivers.py`, `players.py`, `ranges.py` (pure logic, unit tested);
-`market.py` (ESPN odds) + `history.py` (projection misses) → `range_engine.py` → `service.py`
-(shared workflows) → `cli.py` and `web.py` + `static/index.html`.
+Code layout (`src/fantasycoach/`, one folder per area):
+
+```text
+core/          Shared basics
+  models.py      Player object; name matching and fantasy-position helpers
+  scoring.py     Stat lines -> points; Sleeper default / Half PPR / Standard presets
+  config.py      Local settings and cache folders (~/.fantasycoach)
+sources/       Outside data (fetch + cache, no decisions)
+  sleeper.py     Sleeper API: leagues, rosters, matchups, players, projections, stats
+  espn.py        ESPN odds feed: DraftKings game lines and player prop lines
+projections/   Floor / expected / ceiling and win probability
+  history.py     Learns how far results land from projections (past weeks)
+  simulation.py  Pure math: simulate games, summarise player and team ranges
+  engine.py      Gathers a week's data and runs the simulation
+league/        Your league's features
+  context.py     League, roster and player context for one team
+  lineup.py      Start/sit optimiser (pure)
+  waivers.py     Waiver ranking (pure)
+  advice.py      Start/sit and waiver workflows
+  matchup.py     You vs your opponent, current and optimal lineups
+players/       Player lookup (no sign-in)
+  lookup.py      Name search and week-by-week outlooks
+  compare.py     Scoring choice and ranges for comparisons
+interface/     How you use it
+  cli.py         Command-line commands
+  web.py         FastAPI JSON API; serves static/index.html (the web app)
+```
+
+Each file starts with a comment explaining what it does and how it fits in.

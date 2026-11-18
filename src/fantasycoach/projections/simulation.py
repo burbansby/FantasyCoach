@@ -5,7 +5,7 @@ For each simulated game:
 * **Volume stats** (pass/rush/rec yards, receptions) are log-normal around a centre:
   the DraftKings prop line when one exists (a median), otherwise Sleeper's projection
   (a mean). Their spread comes from how far this player's real games have landed from
-  projections (``history.Spread``).
+  projections (``projections.history.Spread``).
 * **Touchdowns, interceptions, fumbles** are Poisson. TD rates come from Sleeper, scaled by
   how many points Vegas expects the team to score; a passing-TD prop line overrides.
 * A shared "game script" factor correlates a player's stats (a big yardage day usually
@@ -24,8 +24,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .history import DEFAULT_PTS_SD, VOLUME_STATS, Spread
-from .scoring import score
+from fantasycoach.projections.history import DEFAULT_PTS_SD, VOLUME_STATS, Spread
+from fantasycoach.core.scoring import score
 
 SIMS = 4000
 POISSON_STATS = ("pass_td", "pass_int", "rush_td", "rec_td", "fum_lost")
@@ -54,6 +54,7 @@ TEAM_LOW_SCALE, TEAM_HIGH_SCALE = 0.90, 0.73
 
 @dataclass
 class Range:
+    """One player's simulated outcome: expected (mean), floor (10th pct) and ceiling (90th pct)."""
     expected: float
     floor: float
     ceiling: float
@@ -62,6 +63,7 @@ class Range:
 
     @property
     def uses_market(self) -> bool:
+        """True when betting lines or a Vegas team total shaped this range."""
         return bool(self.market_stats) or self.team_points is not None
 
 
@@ -95,6 +97,7 @@ def poisson_rate_for_line(line: float) -> float:
 
 @dataclass
 class TeamRange:
+    """A whole lineup's simulated outcome: expected, floor (5th pct) and ceiling (95th pct)."""
     expected: float
     floor: float  # 5th percentile: beaten in 95% of simulated weeks
     ceiling: float  # 95th percentile: not exceeded in 95% of simulated weeks
@@ -113,6 +116,7 @@ def simulate(
     rng: np.random.Generator | None = None,
     sims: int = SIMS,
 ) -> Range:
+    """Simulate one player's game and summarise it as a ``Range`` (see ``simulate_points``)."""
     pts, used_lines = simulate_points(
         player_id, position, projected_stats, scoring, spread, lines, td_scale, line_calibration, rng, sims
     )

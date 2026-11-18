@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "fantasycoach"
 version = "0.1.0"
-description = "Fantasy football advice from your Sleeper league: start/sit and waiver wire recommendations."
+description = "Fantasy football assistant for Sleeper leagues: start/sit, matchups, waivers, player comparison and betting-informed ranges."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -21,7 +21,7 @@ dependencies = [
 dev = ["pytest>=8"]
 
 [project.scripts]
-fantasycoach = "fantasycoach.cli:main"
+fantasycoach = "fantasycoach.interface.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fantasycoach"]

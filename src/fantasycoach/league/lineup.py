@@ -1,11 +1,16 @@
-"""Start/sit: choose the highest-projected legal lineup from a roster."""
+"""Start/sit logic: pick the highest-projected legal lineup from a set of players.
+
+Pure functions (no network). ``optimize`` fills a league's starting slots and ``advise``
+compares that with the lineup you have set. The Matchup tab reuses ``optimize`` to order
+each team's starters and to build optimal lineups.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-from .models import Player
+from fantasycoach.core.models import Player
 
 SLOT_ELIGIBILITY: dict[str, set[str]] = {
     "QB": {"QB"},
@@ -29,28 +34,32 @@ NON_STARTER_SLOTS = {"BN", "IR", "TAXI"}
 
 @dataclass
 class LineupSlot:
+    """One starting slot and the player in it (None when empty)."""
     slot: str
     player: Player | None
 
 
 @dataclass
 class LineupAdvice:
+    """Recommended lineup vs your current one, with the changes and point totals."""
     recommended: list[LineupSlot]
     bench: list[Player]
     current_total: float
     recommended_total: float
     to_start: list[Player]  # recommended starters not currently starting
     to_bench: list[Player]  # current starters not in the recommended lineup
-    # Whole-lineup expected / 5th-95th percentile range (ranges.TeamRange), when computed.
+    # Whole-lineup expected / 5th-95th percentile range (projections.simulation.TeamRange), when computed.
     recommended_range: Any = None
     current_range: Any = None
 
     @property
     def gain(self) -> float:
+        """Projected points gained by switching to the recommended lineup."""
         return round(self.recommended_total - self.current_total, 2)
 
 
 def can_fill(player: Player, slot: str) -> bool:
+    """Whether a player can fill a slot, using all of their fantasy positions."""
     allowed = SLOT_ELIGIBILITY.get(slot, {slot})
     return any(pos in allowed for pos in (player.eligible or [player.position]))
 
@@ -74,6 +83,7 @@ def optimize(players: list[Player], slots: list[str]) -> tuple[list[LineupSlot],
 
 
 def advise(players: list[Player], slots: list[str], current_starter_ids: list[str]) -> LineupAdvice:
+    """Optimal lineup from ``players`` and how it differs from ``current_starter_ids``."""
     lineup, bench = optimize(players, slots)
     by_id = {p.player_id: p for p in players}
     current = [by_id[pid] for pid in current_starter_ids if pid in by_id]

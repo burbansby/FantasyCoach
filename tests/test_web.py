@@ -1,8 +1,10 @@
+"""Tests for the web backend's basics: serving the page, error handling and JSON helpers."""
+
 from fastapi.testclient import TestClient
 
-from fantasycoach import web
-from fantasycoach.models import Player
-from fantasycoach.sleeper import SleeperError
+from fantasycoach.core.models import Player
+from fantasycoach.interface import web
+from fantasycoach.sources.sleeper import SleeperError
 
 
 def test_index_served():

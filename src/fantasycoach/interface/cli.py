@@ -1,4 +1,11 @@
-"""Command line interface: `fantasycoach setup | leagues | lineup | waivers`."""
+"""Command-line interface (Typer).
+
+Commands: ``setup`` (link your Sleeper account), ``leagues``, ``lineup`` (start/sit),
+``matchup``, ``waivers``, ``players`` (lookup and compare, no setup needed) and ``web``
+(start the web app). Run them through ``python3 run.py <command>``; with no command,
+``run.py`` starts the web app. This module only formats output; the work happens in
+``league``, ``players`` and ``projections``.
+"""
 
 from __future__ import annotations
 
@@ -8,13 +15,16 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import service
-from .config import Config, cache_dir
-from .models import Player
-from .sleeper import SleeperClient, SleeperError
+from fantasycoach.league.advice import lineup_advice, waiver_picks
+from fantasycoach.league.matchup import matchup as build_matchup
+from fantasycoach.players.compare import compare_players
+from fantasycoach.core.config import Config, cache_dir
+from fantasycoach.core.models import Player
+from fantasycoach.sources.sleeper import SleeperClient, SleeperError, current_season_week
 
 app = typer.Typer(help="Fantasy football advice for your Sleeper league.", no_args_is_help=True)
 console = Console()
+SETUP_HINT = "python3 run.py setup --username <your sleeper username>"
 
 
 def _client() -> SleeperClient:
@@ -25,7 +35,7 @@ def _require_config(league: Optional[str]) -> tuple[Config, str]:
     cfg = Config.load()
     league_id = league or cfg.league_id
     if not cfg.user_id or not league_id:
-        console.print("[red]Not set up yet.[/] Run [bold]fantasycoach setup --username <sleeper name>[/] first.")
+        console.print(f"[red]Not set up yet.[/] Run [bold]{SETUP_HINT}[/] first.")
         raise typer.Exit(1)
     return cfg, league_id
 
@@ -58,7 +68,7 @@ def setup(
     client = _client()
     try:
         user = client.user(username)
-        season = client.state()["league_season"]
+        season, _ = current_season_week(client)
         leagues = client.user_leagues(user["user_id"], season)
     except SleeperError as e:
         console.print(f"[red]{e}[/]")
@@ -82,10 +92,10 @@ def leagues():
     """List your leagues for the current season."""
     cfg = Config.load()
     if not cfg.user_id:
-        console.print("[red]Run setup first.[/]")
+        console.print(f"[red]Not set up yet.[/] Run [bold]{SETUP_HINT}[/] first.")
         raise typer.Exit(1)
     client = _client()
-    season = client.state()["league_season"]
+    season, _ = current_season_week(client)
     for lg in client.user_leagues(cfg.user_id, season):
         marker = "*" if lg["league_id"] == cfg.league_id else " "
         console.print(f"{marker} {lg['name']}  [dim]({lg['league_id']})[/]")
@@ -98,7 +108,7 @@ def lineup(
 ):
     """Start/sit: recommend the best lineup for the week."""
     cfg, league_id = _require_config(league)
-    ctx, advice = service.lineup_advice(_client(), league_id, cfg.user_id, week)
+    ctx, advice = lineup_advice(_client(), league_id, cfg.user_id, week)
 
     table = Table(title=f"{ctx.league['name']} — Week {ctx.week} recommended lineup")
     for col in ("Slot", "Player", "Matchup", "Status", "Proj", "Floor-Ceiling"):
@@ -127,7 +137,7 @@ def lineup(
             console.print(f"  [red]Bench[/] {p.label}  {p.projected:.1f}")
         console.print(
             f"Projected: {advice.current_total:.1f} → [bold]{advice.recommended_total:.1f}[/] "
-            f"([green]+{advice.gain:.1f}[/])"
+            f"([green]{advice.gain:+.1f}[/])"
         )
     else:
         console.print(f"[green]Your current lineup is optimal.[/] Projected {advice.recommended_total:.1f}")
@@ -152,7 +162,7 @@ def waivers(
 ):
     """Waiver wire: free agents ranked by upgrade over your weakest player."""
     cfg, league_id = _require_config(league)
-    ctx, picks = service.waiver_picks(_client(), league_id, cfg.user_id, week, weeks, position, limit)
+    ctx, picks = waiver_picks(_client(), league_id, cfg.user_id, week, weeks, position, limit)
 
     span = f"weeks {ctx.week}-{ctx.week + weeks - 1}" if weeks > 1 else f"week {ctx.week}"
     table = Table(title=f"{ctx.league['name']} — waiver targets ({span})")
@@ -179,7 +189,7 @@ def matchup(
 ):
     """Your matchup: both starting lineups with projections and floor-ceiling ranges."""
     cfg, league_id = _require_config(league)
-    m = service.matchup(_client(), league_id, cfg.user_id, week)
+    m = build_matchup(_client(), league_id, cfg.user_id, week)
     my_view, their_view = ("optimal" if optimal else "current"), ("optimal" if opp_optimal else "current")
     me = m.me.view(my_view)
     them = m.opponent.view(their_view) if m.opponent else None
@@ -187,6 +197,7 @@ def matchup(
     them_name = (m.opponent.team_name + (" (optimal)" if opp_optimal else "")) if m.opponent else ""
 
     def cell(p) -> tuple[str, str]:
+        """(player text, projection + range text) for one side of a table row."""
         if p is None:
             return "[red]EMPTY[/]", ""
         return f"{p.label} {_status(p)}".strip(), f"{p.projected:.1f}\n[dim]{_range(p.range)}[/]"
@@ -241,30 +252,32 @@ def players(
     league: Optional[str] = typer.Option(None, "--league", "-l", help="Use this league's scoring"),
 ):
     """Look up one or more players and compare their projections. No setup required."""
-    from . import players as players_mod
-    from .market import STAT_LABELS
+    from fantasycoach.core.models import display_name, normalize
+    from fantasycoach.core.scoring import SCORING_PRESETS
+    from fantasycoach.players import lookup
+    from fantasycoach.sources.espn import STAT_LABELS
 
-    if scoring not in (None, "league", *players_mod.SCORING_PRESETS):
+    if scoring not in (None, "league", *SCORING_PRESETS):
         console.print("[red]--scoring must be one of: league, default, half, std[/]")
         raise typer.Exit(1)
     client = _client()
     db = client.players()
     ids: list[str] = []
     for name in names:
-        matches = players_mod.search(db, name, limit=4)
+        matches = lookup.search(db, name, limit=4)
         if not matches:
             console.print(f"[red]No player found for '{name}'[/]")
             continue
         pid, info = matches[0]
         ids.append(pid)
-        if len(matches) > 1 and players_mod.normalize(name) != players_mod.normalize(players_mod.display_name(info)):
-            others = ", ".join(f"{players_mod.display_name(i)} ({i.get('position')})" for _, i in matches[1:])
-            console.print(f"[dim]'{name}' -> {players_mod.display_name(info)}  (also matched: {others})[/]")
+        if len(matches) > 1 and normalize(name) != normalize(display_name(info)):
+            others = ", ".join(f"{display_name(i)} ({i.get('position')})" for _, i in matches[1:])
+            console.print(f"[dim]'{name}' -> {display_name(info)}  (also matched: {others})[/]")
     if not ids:
         raise typer.Exit(1)
 
     league_id = league or (Config.load().league_id if scoring in (None, "league") else None)
-    label, start, outs = service.compare_players(client, list(dict.fromkeys(ids)), scoring, league_id, week, weeks)
+    label, start, outs = compare_players(client, list(dict.fromkeys(ids)), scoring, league_id, week, weeks)
 
     table = Table(title=f"Projections - {label}")
     table.add_column("Player")
@@ -323,10 +336,11 @@ def web(
     console.print(f"FantasyCoach running at [bold]{url}[/]  (Ctrl+C to stop)")
     if open_browser:
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
-    uvicorn.run("fantasycoach.web:app", host=host, port=port, log_level="warning")
+    uvicorn.run("fantasycoach.interface.web:app", host=host, port=port, log_level="warning")
 
 
 def main() -> None:
+    """Entry point: run the CLI and turn Sleeper errors into a short message instead of a traceback."""
     try:
         app()
     except SleeperError as e:

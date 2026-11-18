@@ -18,7 +18,8 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from .sleeper import SleeperClient
+from fantasycoach.core.models import normalize
+from fantasycoach.sources.sleeper import SleeperClient
 
 log = logging.getLogger(__name__)
 
@@ -53,23 +54,14 @@ def _team(abbr: str | None) -> str | None:
     return TEAM_FIX.get(abbr, abbr) if abbr else None
 
 
-def _norm(name: str) -> str:
-    name = re.sub(r"[^a-z ]", "", name.lower())
-    name = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b", "", name)
-    return re.sub(r"\s+", "", name)
-
-
 @dataclass
 class Market:
+    """Betting context for one week: implied team points and player prop lines."""
     week: int
     team_points: dict[str, float] = field(default_factory=dict)  # Sleeper team abbr -> implied points
     lines: dict[str, dict[str, float]] = field(default_factory=dict)  # Sleeper player_id -> {stat: line}
     games: int = 0
     error: str | None = None
-
-    @property
-    def available(self) -> bool:
-        return bool(self.team_points or self.lines)
 
 
 def implied_points(details: str | None, total: float | None, home: str, away: str) -> dict[str, float]:
@@ -92,10 +84,12 @@ def implied_points(details: str | None, total: float | None, home: str, away: st
 
 
 class MarketFetcher:
+    """Pulls a week's scoreboard, game odds, team rosters and prop lines from ESPN."""
     def __init__(self, client: SleeperClient):
         self.client = client
 
     def week_market(self, season: str, week: int) -> Market:
+        """Market data for every unfinished game in ``week``; empty (with ``error``) on failure."""
         market = Market(week=week)
         try:
             board = self.client.fetch_json(
@@ -162,7 +156,7 @@ class MarketFetcher:
         out = {}
         for group in data.get("athletes", []):
             for a in group.get("items", []):
-                out[str(a["id"])] = (_norm(a.get("fullName") or a.get("displayName") or ""), team_abbr)
+                out[str(a["id"])] = (normalize(a.get("fullName") or a.get("displayName") or ""), team_abbr)
         return out
 
     def _sleeper_espn_index(self) -> dict[str, str]:
@@ -173,5 +167,5 @@ class MarketFetcher:
         for pid, v in self.client.players().items():
             if v.get("team") and set(v.get("fantasy_positions") or [v.get("position")]) & {"QB", "RB", "WR", "TE", "K"}:
                 name = v.get("full_name") or f"{v.get('first_name', '')} {v.get('last_name', '')}"
-                index.setdefault((_norm(name), v["team"]), pid)
+                index.setdefault((normalize(name), v["team"]), pid)
         return index

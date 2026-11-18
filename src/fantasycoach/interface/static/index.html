@@ -1,4 +1,16 @@
 <!doctype html>
+<!--
+  FantasyCoach web app: a single self-contained page (HTML, CSS and JavaScript, no build step).
+  Served by interface/web.py at "/", it talks only to that server's JSON API (/api/...).
+
+  Layout
+    header   brand + account area (league picker / "Connect Sleeper")
+    #setup   sign-in screen: Sleeper username -> pick a league (or skip to player lookup)
+    #main    tab bar (Start / Sit, Matchup, Waiver Wire, Players), week and filter controls,
+             and #content, which each tab's render function fills in
+
+  Styling uses CSS variables (light and dark themes) and mobile-first layouts.
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -144,7 +156,6 @@ input[type=text]:focus, select:focus, .btn:focus-visible { outline: 2px solid va
 .pname { font-weight: 620; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pmeta { color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .pts { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
-.pts small { display: block; font-weight: 500; color: var(--muted); font-size: 12px; }
 .pts .rng { display: block; font-weight: 500; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .rangebox { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
 .rb-head { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700;
@@ -376,6 +387,16 @@ footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 2
 </div>
 
 <script>
+/*
+  How the page works
+  - store:  localStorage wrapper (remembers username, league, tab, chosen players, toggles)
+  - state:  everything the UI currently shows; changing it and calling load() re-renders
+  - load(): fetches the active tab's data from /api/... and hands it to a render function:
+              lineup  -> renderLineup     matchup -> renderMatchup
+              waivers -> renderWaivers    players -> renderPlayers
+  - Render functions build HTML strings; every value from the API goes through esc().
+  - Sections below: rendering helpers, views, data loading, players, screens, events, boot.
+*/
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem("fc." + k)); } catch { return null; } },
   set(k, v) { try { localStorage.setItem("fc." + k, JSON.stringify(v)); } catch {} },
@@ -388,7 +409,6 @@ const state = {
   leagueId: store.get("league"),
   tab: store.get("tab") || "lineup",
   week: null,
-  currentWeek: null,
   horizon: 3,
   position: "",
   positions: [],
@@ -457,25 +477,37 @@ function loading(msg) {
 function showError(el, msg) { el.textContent = msg; el.classList.toggle("hidden", !msg); }
 
 /* ---------- views ---------- */
+function slotLabel(slot) {
+  return slot.replace("SUPER_FLEX", "SFLX").replace("_FLEX", " FLX");
+}
+
+// Team floor–ceiling bars drawn on one shared scale so they can be compared.
+// rows: [{label, range, cls, note}]; label null draws a bare bar.
+function rangeBars(rows) {
+  const lo = Math.min(...rows.map((r) => r.range.floor)), hi = Math.max(...rows.map((r) => r.range.ceiling));
+  const span = Math.max(hi - lo, 1), pad = span * 0.08;
+  const pct = (v) => `${(((v - lo + pad) / (span + 2 * pad)) * 100).toFixed(1)}%`;
+  const bar = (x, cls) => `<div class="rbar ${cls || ""}" title="Floor ${fmt(x.floor)} · expected ${fmt(x.expected)} · ceiling ${fmt(x.ceiling)}">
+      <div class="band" style="left:${pct(x.floor)};width:calc(${pct(x.ceiling)} - ${pct(x.floor)})"></div>
+      <div class="mk exp" style="left:${pct(x.expected)}"></div></div>`;
+  return rows.map((r) => r.label == null ? bar(r.range, r.cls)
+    : `<div class="tr-row"><span>${esc(r.label)}</span>${bar(r.range, r.cls)}<em>${r.note ?? ""}</em></div>`).join("");
+}
+
 function teamRange(d) {
   const r = d.team_range;
   if (!r) return "";
   const c = d.current_range;
-  const lo = Math.min(r.floor, c ? c.floor : r.floor), hi = Math.max(r.ceiling, c ? c.ceiling : r.ceiling);
-  const span = Math.max(hi - lo, 1), pad = span * 0.08;
-  const pct = (v) => `${(((v - lo + pad) / (span + 2 * pad)) * 100).toFixed(1)}%`;
-  const bar = (x, cls) => `<div class="rbar ${cls}" title="Floor ${fmt(x.floor)} · expected ${fmt(x.expected)} · ceiling ${fmt(x.ceiling)}">
-      <div class="band" style="left:${pct(x.floor)};width:calc(${pct(x.ceiling)} - ${pct(x.floor)})"></div>
-      <div class="mk exp" style="left:${pct(x.expected)}"></div></div>`;
-  const showCurrent = c && d.to_start.length;
+  const bars = c && d.to_start.length
+    ? rangeBars([{ label: "Recommended", range: r }, { label: "Current", range: c, cls: "muted-bar", note: `${fmt(c.floor)}–${fmt(c.ceiling)}` }])
+    : rangeBars([{ label: null, range: r }]);
   return `<div class="team-range">
     <div class="tr-nums">
       <div><span class="label">Team floor</span><b>${fmt(r.floor)}</b></div>
       <div><span class="label">Expected</span><b style="color:var(--accent)">${fmt(r.expected)}</b></div>
       <div><span class="label">Team ceiling</span><b>${fmt(r.ceiling)}</b></div>
     </div>
-    ${showCurrent ? `<div class="tr-row"><span>Recommended</span>${bar(r, "")}</div>
-      <div class="tr-row"><span>Current</span>${bar(c, "muted-bar")}<em>${fmt(c.floor)}–${fmt(c.ceiling)}</em></div>` : bar(r, "")}
+    ${bars}
     <div class="muted" style="font-size:12px;margin-top:8px">95% of simulated weeks score above the floor and 95% stay below the ceiling.</div>
   </div>`;
 }
@@ -511,32 +543,23 @@ function viewToggle(sideKey, sd) {
 
 function renderMatchup(d) {
   lastMatchup = d;
-  const pickView = (sd, key) => (sd && sd.views ? { ...sd, ...sd.views[state.muView[key]] } : sd);
+  const pickView = (sd, key) => (sd ? { ...sd, ...sd.views[state.muView[key]] } : null);
   const me = pickView(d.me, "me"), op = pickView(d.opponent, "op");
   const sideHead = (sd, right) => `<div class="mu-team ${right ? "right" : ""}">
       <div class="mu-name">${teamAvatar(sd)}<div style="min-width:0"><div class="pname">${esc(sd.team_name)}</div>
         <div class="pmeta">${esc(sd.owner)}</div></div></div>
-      ${sd.views ? viewToggle(right ? "op" : "me", sd) : ""}
+      ${viewToggle(right ? "op" : "me", sd)}
       <div class="mu-total">${fmt(sd.projected)}</div>
       ${sd.range ? `<div class="pmeta">Floor ${fmt(sd.range.floor)} · Ceiling ${fmt(sd.range.ceiling)}</div>` : ""}
     </div>`;
 
-  let ranges = "";
-  if (me.range && op?.range) {
-    const lo = Math.min(me.range.floor, op.range.floor), hi = Math.max(me.range.ceiling, op.range.ceiling);
-    const span = Math.max(hi - lo, 1), pad = span * 0.08;
-    const pct = (v) => `${(((v - lo + pad) / (span + 2 * pad)) * 100).toFixed(1)}%`;
-    const bar = (r, cls) => `<div class="rbar ${cls}" title="Floor ${fmt(r.floor)} · expected ${fmt(r.expected)} · ceiling ${fmt(r.ceiling)}">
-        <div class="band" style="left:${pct(r.floor)};width:calc(${pct(r.ceiling)} - ${pct(r.floor)})"></div>
-        <div class="mk exp" style="left:${pct(r.expected)}"></div></div>`;
-    ranges = `<div class="team-range">
-      <div class="tr-row"><span>${esc(me.team_name)}</span>${bar(me.range, "")}<em>${fmt(me.range.expected)}</em></div>
-      <div class="tr-row"><span>${esc(op.team_name)}</span>${bar(op.range, "opp-bar")}<em>${fmt(op.range.expected)}</em></div>
+  const ranges = me.range && op?.range ? `<div class="team-range">
+      ${rangeBars([{ label: me.team_name, range: me.range, note: fmt(me.range.expected) },
+                   { label: op.team_name, range: op.range, cls: "opp-bar", note: fmt(op.range.expected) }])}
       <div class="muted" style="font-size:12px;margin-top:6px">Bars show each team's floor–ceiling (95% of simulated weeks land inside); tick = expected score.</div>
-    </div>`;
-  }
+    </div>` : "";
 
-  const win = d.win_probabilities?.[`${state.muView.me}|${state.muView.op}`] ?? d.win_probability;
+  const win = d.win_probabilities?.[`${state.muView.me}|${state.muView.op}`];
   const winBar = win == null ? "" : `<div class="mu-win">
       <div class="mu-win-labels"><span>${Math.round(win * 100)}%</span><span class="label">Win probability</span><span>${Math.round((1 - win) * 100)}%</span></div>
       <div class="mu-win-bar"><i style="width:${(win * 100).toFixed(1)}%"></i></div></div>`;
@@ -556,7 +579,7 @@ function renderMatchup(d) {
   };
   const rows = me.slots.map((s, i) => `<li class="mu-row ${op ? edge(s, op.slots[i]) : ""}">
       ${muPlayer(s, false)}
-      <div class="slot">${esc(s.slot.replace("_FLEX", " FLX").replace("SUPER FLX", "SFLX"))}</div>
+      <div class="slot">${esc(slotLabel(s.slot))}</div>
       ${op ? muPlayer(op.slots[i], true) : "<div></div>"}</li>`).join("");
 
   $("content").innerHTML = `${head}
@@ -565,10 +588,10 @@ function renderMatchup(d) {
 }
 
 function renderLineup(d) {
-  const summary = d.gain > 0
+  const summary = d.to_start.length
     ? `<div><div class="label">Projected points</div>
          <div class="big">${fmt(d.current_total)} <span class="muted">→</span> ${fmt(d.recommended_total)}</div></div>
-       <div class="gain" style="font-size:22px">+${fmt(d.gain)} pts</div>`
+       <div class="gain" style="font-size:22px">${d.gain >= 0 ? "+" : ""}${fmt(d.gain)} pts</div>`
     : `<div><div class="label">Projected points</div><div class="big">${fmt(d.recommended_total)}</div></div>
        <span class="ok-pill">✓ Your lineup is optimal</span>`;
 
@@ -581,7 +604,7 @@ function renderLineup(d) {
     </div>` : "";
 
   const slots = d.slots.map((s) => s.player
-    ? `<li class="row ${s.new ? "new" : ""}"><div class="slot">${esc(s.slot.replace("_FLEX", " FLX").replace("SUPER FLX", "SFLX"))}</div>
+    ? `<li class="row ${s.new ? "new" : ""}"><div class="slot">${esc(slotLabel(s.slot))}</div>
          <div style="min-width:0;display:flex;align-items:center;gap:8px">${playerCell(s.player)}${s.new ? '<span class="badge up">START</span>' : ""}</div>${pts(s.player)}</li>`
     : `<li class="row"><div class="slot">${esc(s.slot)}</div><div class="empty-slot">Empty — no eligible player</div><div></div></li>`).join("");
   const benchedIds = new Set(d.to_bench.map((p) => p.id));

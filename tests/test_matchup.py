@@ -1,7 +1,13 @@
+"""Tests for the Matchup feature: lineup pairing, re-seating, optimal views, win probabilities and its API."""
+
 import numpy as np
 from fastapi.testclient import TestClient
 
-from fantasycoach import ranges, service, web
+from fantasycoach.interface import web
+from fantasycoach.league import matchup as matchup_mod
+from fantasycoach.league.lineup import LineupSlot
+from fantasycoach.core.models import Player
+from fantasycoach.projections import simulation
 
 SLOTS = ["QB", "RB", "WR", "FLEX", "BN"]
 
@@ -52,67 +58,66 @@ class FakeClient:
 
 
 def test_matchup_pairs_both_lineups_with_projections():
-    m = service.matchup(FakeClient(), "L", "me")
+    m = matchup_mod.matchup(FakeClient(), "L", "me")
     assert m.week == 11 and m.league == "Test League"
-    assert [s.slot for s in m.me.slots] == ["QB", "RB", "WR", "FLEX"]
-    assert [s.player.player_id for s in m.me.slots] == ["q1", "r1", "w1", "w3"]
+    assert [s.slot for s in m.me.current.slots] == ["QB", "RB", "WR", "FLEX"]
+    assert [s.player.player_id for s in m.me.current.slots] == ["q1", "r1", "w1", "w3"]
     assert m.opponent.team_name == "rival" and m.opponent.avatar.endswith("/abc")
-    assert m.opponent.slots[3].player is None  # empty slot ("0")
+    assert m.opponent.current.slots[3].player is None  # empty slot ("0")
     assert m.me.team_name == "Home Team"
-    assert m.me.projected > m.opponent.projected
-    assert m.me.range.floor < m.me.range.expected < m.me.range.ceiling
-    assert 0.5 < m.win_probability < 1.0
-    assert all(s.player.range for s in m.me.slots)
+    assert m.me.current.projected > m.opponent.current.projected
+    r = m.me.current.range
+    assert r.floor < r.expected < r.ceiling
+    assert 0.5 < m.win_probabilities[("current", "current")] < 1.0
+    assert all(s.player.range for s in m.me.current.slots)
 
 
 def test_matchup_without_opponent():
     c = FakeClient()
     c.matchups = lambda league_id, week: [{"roster_id": 1, "matchup_id": None, "starters": ["q1", "r1", "w1", "w3"]}]
-    m = service.matchup(c, "L", "me")
-    assert m.opponent is None and m.win_probability is None and m.me.range is not None
+    m = matchup_mod.matchup(c, "L", "me")
+    assert m.opponent is None and m.win_probabilities is None and m.me.current.range is not None
 
 
 def test_matchup_endpoint(monkeypatch):
     monkeypatch.setattr(web, "client", FakeClient())
     body = TestClient(web.app).get("/api/matchup", params={"league_id": "L", "user_id": "me"}).json()
     assert body["me"]["team_name"] == "Home Team" and body["opponent"]["owner"] == "rival"
-    assert len(body["me"]["slots"]) == 4 and body["me"]["slots"][0]["player"]["range"]
-    assert 0 < body["win_probability"] < 1
+    slots = body["me"]["views"]["current"]["slots"]
+    assert len(slots) == 4 and slots[0]["player"]["range"]
+    assert 0 < body["win_probabilities"]["current|current"] < 1
 
 
 def test_win_probability_symmetry_and_ordering():
     rng = np.random.default_rng(0)
-    a = [rng.normal(100, 15, ranges.SIMS)]
-    b = [rng.normal(100, 15, ranges.SIMS)]
-    c = [rng.normal(130, 15, ranges.SIMS)]
-    p_ab, p_ba = ranges.win_probability(a, b), ranges.win_probability(b, a)
+    a = [rng.normal(100, 15, simulation.SIMS)]
+    b = [rng.normal(100, 15, simulation.SIMS)]
+    c = [rng.normal(130, 15, simulation.SIMS)]
+    p_ab, p_ba = simulation.win_probability(a, b), simulation.win_probability(b, a)
     assert abs(p_ab + p_ba - 1) < 1e-9
     assert 0.4 < p_ab < 0.6
-    assert ranges.win_probability(c, a) > 0.9
+    assert simulation.win_probability(c, a) > 0.9
 
 
 def _p(pid, pos, pts):
-    from fantasycoach.models import Player
     return Player(pid, pid, pos, "XX", projected=pts, eligible=[pos])
 
 
 def test_order_by_projection_reseats_interchangeable_players():
-    from fantasycoach.lineup import LineupSlot
     slots = [LineupSlot("QB", _p("q", "QB", 20)), LineupSlot("RB", _p("r_low", "RB", 9)),
              LineupSlot("RB", _p("r_mid", "RB", 12)), LineupSlot("FLEX", _p("r_top", "RB", 16)),
              LineupSlot("FLEX", _p("w_low", "WR", 7)), LineupSlot("FLEX", _p("w_hi", "WR", 11))]
-    out = service.order_by_projection(slots)
+    out = matchup_mod.order_by_projection(slots)
     assert [s.slot for s in out] == ["QB", "RB", "RB", "FLEX", "FLEX", "FLEX"]
     assert [s.player.player_id for s in out] == ["q", "r_top", "r_mid", "w_hi", "r_low", "w_low"]
 
 
 def test_order_by_projection_keeps_empty_slots_and_original_when_infeasible():
-    from fantasycoach.lineup import LineupSlot
     slots = [LineupSlot("RB", _p("r1", "RB", 5)), LineupSlot("RB", None), LineupSlot("K", _p("k", "K", 8))]
-    out = service.order_by_projection(slots)
+    out = matchup_mod.order_by_projection(slots)
     assert [s.player.player_id if s.player else None for s in out] == ["r1", None, "k"]
     odd = [LineupSlot("WR", _p("d", "DB", 5))]  # starter not eligible for any slot by position
-    assert service.order_by_projection(odd) is odd
+    assert matchup_mod.order_by_projection(odd) is odd
 
 
 BENCH_STAR = proj("wb", "DET", "WR", "TB", rec=8, rec_yd=110, rec_td=0.9, pts_ppr=24.4)
@@ -135,7 +140,7 @@ class BenchStarClient(FakeClient):
 
 
 def test_optimal_views_use_bench_and_skip_injured_reserve():
-    m = service.matchup(BenchStarClient(), "L", "me")
+    m = matchup_mod.matchup(BenchStarClient(), "L", "me")
     cur_ids = {s.player.player_id for s in m.me.current.slots if s.player}
     opt_ids = {s.player.player_id for s in m.me.optimal.slots if s.player}
     assert "wb" not in cur_ids and "wb" in opt_ids
@@ -146,11 +151,10 @@ def test_optimal_views_use_bench_and_skip_injured_reserve():
 
 
 def test_win_probabilities_for_every_pairing():
-    m = service.matchup(BenchStarClient(), "L", "me")
+    m = matchup_mod.matchup(BenchStarClient(), "L", "me")
     w = m.win_probabilities
     assert set(w) == {(a, b) for a in ("current", "optimal") for b in ("current", "optimal")}
     assert w[("optimal", "current")] > w[("current", "current")]  # starting the bench star helps you
-    assert m.win_probability == w[("current", "current")]
 
 
 def test_matchup_endpoint_exposes_both_views(monkeypatch):
@@ -159,5 +163,4 @@ def test_matchup_endpoint_exposes_both_views(monkeypatch):
     me = body["me"]
     assert set(me["views"]) == {"current", "optimal"}
     assert me["views"]["optimal"]["projected"] > me["views"]["current"]["projected"]
-    assert me["projected"] == me["views"]["current"]["projected"]
     assert set(body["win_probabilities"]) == {"current|current", "current|optimal", "optimal|current", "optimal|optimal"}
